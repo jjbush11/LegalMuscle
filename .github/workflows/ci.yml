@@ -79,3 +79,38 @@ jobs:
           if [ -f package.json ] && grep -q "prettier" package.json; then
             npm run format:check
           fi
+
+  build-and-push-images:
+    runs-on: ubuntu-latest
+    needs: [api-tests, spa-tests] # Run this job only if tests pass
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Only run on push to main
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          tags: ghcr.io/jjbush11/legalmuscle/api:latest
+
+      - name: Build and push SPA image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./spa
+          file: ./spa/Dockerfile
+          push: true
+          tags: ghcr.io/jjbush11/legalmuscle/spa:latest
