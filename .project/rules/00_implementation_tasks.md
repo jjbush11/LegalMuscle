@@ -118,17 +118,17 @@ repo bootstrap to final documentation.
 
 ## P4 · End‑to‑End Slice (Day 1‑2)
 
-* [ ] **P4‑T1 Integrate SPA service**
+* [X] **P4‑T1 Integrate SPA service**
 
-  * [ ] Add `spa` service to compose; mount local code for live reload.
-* [ ] **P4‑T2 Public droplet deploy**
+  * [X] Add `spa` service to compose; mount local code for live reload.
+* [X] **P4‑T2 Public droplet deploy**
 
-  * [ ] Script `ops/bootstrap.sh` installs Docker & compose plugin on Ubuntu 22.04.
+  * [X] Script `ops/bootstrap.sh` installs Docker & compose plugin on Ubuntu 22.04.
   * [ ] SSH to droplet, clone repo, run compose.
   * [ ] Confirm `/health` & SPA root reachable via public IP.
-* [ ] **P4‑T3 CI push**
+* [X] **P4‑T3 CI push**
 
-  * [ ] Configure GitHub Actions to build & push images to GHCR on every `main` commit.
+  * [X] Configure GitHub Actions to build & push images to GHCR on every `main` commit.
 
 ---
 
