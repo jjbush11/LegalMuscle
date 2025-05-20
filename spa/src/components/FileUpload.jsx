@@ -62,7 +62,7 @@ const FileUpload = () => {
             multiple
             onChange={handleFileChange}
             disabled={uploading}
-            accept="image/*,video/*"
+            accept=".zip,application/zip,image/*,video/*"
           />
           <div className="selected-files">
             {selectedFiles.length > 0 && (
