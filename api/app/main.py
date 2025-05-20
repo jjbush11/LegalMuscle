@@ -53,6 +53,8 @@ async def upload_evidence(file: UploadFile = File(...)):
     and prepares it for storage.
     P5-T1: Strict upload validation
     """
+    print(f"Received upload request for file: {file.filename}")
+    print(file.content_type)
     if file.content_type != "application/zip":
         raise HTTPException(status_code=415, detail="Unsupported Media Type: Only application/zip is allowed.")
 
