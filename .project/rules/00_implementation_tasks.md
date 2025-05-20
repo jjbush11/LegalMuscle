@@ -124,8 +124,8 @@ repo bootstrap to final documentation.
 * [X] **P4‑T2 Public droplet deploy**
 
   * [X] Script `ops/bootstrap.sh` installs Docker & compose plugin on Ubuntu 22.04.
-  * [ ] SSH to droplet, clone repo, run compose.
-  * [ ] Confirm `/health` & SPA root reachable via public IP.
+  * [X] SSH to droplet, clone repo, run compose.
+  * [X] Confirm `/health` & SPA root reachable via public IP.
 * [X] **P4‑T3 CI push**
 
   * [X] Configure GitHub Actions to build & push images to GHCR on every `main` commit.
@@ -134,15 +134,15 @@ repo bootstrap to final documentation.
 
 ## P5 · Manifest Parsing & DB Schema (Day 3‑4)
 
-* [ ] **P5‑T1 Strict upload validation**
+* [X] **P5‑T1 Strict upload validation**
 
-  * [ ] Accept only `application/zip` MIME.
-  * [ ] Stream ZIP to temp dir; iterate entries.
-  * [ ] Compute SHA‑256 of each file; parse `manifest.json` (Tella) or `metadata.yaml` (eyeWitness).
-  * [ ] Reject upload on mismatch; return details.
-* [ ] **P5‑T2 Database migrations**
+  * [X] Accept only `application/zip` MIME.
+  * [X] Stream ZIP to temp dir; iterate entries.
+  * [X] Compute SHA‑256 of each file; parse `manifest.json` (Tella) or `metadata.yaml` (eyeWitness).
+  * [X] Reject upload on mismatch; return details.
+* [X] **P5‑T2 Database migrations**
 
-  * [ ] Add `alembic`; generate initial migration creating tables:
+  * [X] Add `alembic`; generate initial migration creating tables:
 
     * `evidence_objects (id UUID PK, org_id FK, object_name, sha256, created_at, minio_version_id)`
     * `evidence_files (id UUID PK, object_id FK, filename, sha256, geometry GEOGRAPHY(Point,4326), captured_at)`.
