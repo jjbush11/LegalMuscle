@@ -66,7 +66,7 @@ const FileUpload = () => {
           />
           <div className="selected-files">
             {selectedFiles.length > 0 && (
-              <p>
+              <div>
                 {selectedFiles.length} file(s) selected:
                 <ul>
                   {selectedFiles.map((file, index) => (
@@ -75,7 +75,7 @@ const FileUpload = () => {
                     </li>
                   ))}
                 </ul>
-              </p>
+              </div>
             )}
           </div>
         </div>
