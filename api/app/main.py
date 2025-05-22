@@ -53,10 +53,16 @@ async def upload_evidence(file: UploadFile = File(...)):
     and prepares it for storage.
     P5-T1: Strict upload validation
     """
-    print(f"Received upload request for file: {file.filename}")
-    print(file.content_type)
-    if file.content_type != "application/zip":
-        raise HTTPException(status_code=415, detail="Unsupported Media Type: Only application/zip is allowed.")
+
+    print("james")
+
+    # Allows for multiple content types for ZIP files
+    allowed_zip_types = ["application/zip", "application/x-zip-compressed", "application/x-zip"]
+    if file.content_type not in allowed_zip_types:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported Media Type: {file.content_type}. Only ZIP files ({', '.join(allowed_zip_types)}) are allowed."
+        )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file_path = f"{temp_dir}/{file.filename}"
@@ -83,7 +89,7 @@ async def upload_evidence(file: UploadFile = File(...)):
         metadata_yaml_path = f"{extracted_files_path}/metadata.yaml"
 
         # Check which manifest file exists in the root of the extracted archive
-        if zipfile.Path(manifest_json_path).exists():
+        if os.path.exists(manifest_json_path):
             try:
                 with open(manifest_json_path, 'r') as f:
                     manifest_content = json.load(f)
@@ -93,7 +99,7 @@ async def upload_evidence(file: UploadFile = File(...)):
                 raise HTTPException(status_code=400, detail="Invalid manifest.json: Not valid JSON.")
             except Exception as e: # Covers Pydantic validation errors
                 raise HTTPException(status_code=400, detail=f"Invalid manifest.json: {e}")
-        elif zipfile.Path(metadata_yaml_path).exists():
+        elif os.path.exists(metadata_yaml_path):
             try:
                 with open(metadata_yaml_path, 'r') as f:
                     metadata_content = yaml.safe_load(f)
