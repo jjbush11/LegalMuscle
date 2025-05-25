@@ -136,7 +136,7 @@ repo bootstrap to final documentation.
 
 * [X] **P5‑T1 Strict upload validation**
 
-  * [X] Accept only `application/zip` MIME.
+  * [X] Accept `application/zip` MIME and other types.
   * [X] Stream ZIP to temp dir; iterate entries.
   * [X] Compute SHA‑256 of each file; parse `manifest.json` (Tella) or `metadata.yaml` (eyeWitness).
   * [X] Reject upload on mismatch; return details.
@@ -151,22 +151,22 @@ repo bootstrap to final documentation.
 
 ## P6 · MinIO Object‑Lock Integration (Day 3‑4)
 
-* [ ] **P6‑T1 Bucket bootstrap**
+* [X] **P6‑T1 Bucket bootstrap**
 
-  * [ ] Init script runs:
+  * [X] Init script runs:
 
     * `mc mb minio/evidence --with-lock`
     * `mc retention set --default COMPLIANCE 2555d minio/evidence`
 * [ ] **P6‑T2 Upload with retention**
 
-  * [ ] Modify upload endpoint to call MinIO SDK `put_object` with headers:
+  * [X] Modify upload endpoint to call MinIO SDK `put_object` with headers:
 
     * `x-amz-object-lock-mode: COMPLIANCE`
     * `x-amz-object-lock-retain-until-date: +7y`
   * [ ] Store returned `version_id` in DB.
-* [ ] **P6‑T3 Signed URL retrieval**
+* [X] **P6‑T3 Signed URL retrieval**
 
-  * [ ] Implement `GET /api/v1/files/{uuid}` returning presigned GET link valid 15 min.
+  * [X] Implement `GET /api/v1/files/{uuid}` returning presigned GET link valid 15 min.
 
 ---
 
