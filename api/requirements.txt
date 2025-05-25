@@ -3,7 +3,7 @@ uvicorn==0.23.2
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 alembic==1.12.1
-minio==7.1.17
+minio
 pydantic==2.4.2
 python-multipart==0.0.6
 docxtpl==0.16.7

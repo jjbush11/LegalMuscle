@@ -31,7 +31,8 @@ const FileUpload = () => {
       const formData = new FormData();
       formData.append('file', selectedFile); // Changed 'files' to 'file' and use selectedFile
 
-      const response = await axios.post('/api/v1/upload', formData, {
+      // const response = await axios.post('/api/v1/upload', formData, {
+      const response = await axios.post('/api/v1/upload_refined', formData, {
         headers: {
           // 'Content-Type': 'multipart/form-data' is automatically set by Axios when using FormData
         },
@@ -89,7 +90,7 @@ const FileUpload = () => {
             // removed multiple attribute
             onChange={handleFileChange}
             disabled={uploading}
-            accept=".zip,application/zip" // Changed to accept only ZIP files
+            accept=".zip,application/zip,image/*,video/*" // Changed to accept ZIP, images, and videos
           />
           <div className="selected-files">
             {selectedFile && ( // Changed condition
@@ -110,7 +111,7 @@ const FileUpload = () => {
           disabled={uploading || !selectedFile} // Changed condition
           className="upload-button"
         >
-          {uploading ? 'Uploading...' : 'Upload ZIP File'} 
+          {uploading ? 'Uploading...' : 'Upload File'}
         </button>
       </form>
 
