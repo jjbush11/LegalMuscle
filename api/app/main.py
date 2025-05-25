@@ -14,6 +14,8 @@ from minio import Minio
 from minio.error import S3Error
 from datetime import timedelta, datetime, timezone # Added timezone
 import mimetypes # Ensure mimetypes is imported
+import gnupg # Added for ProofMode GPG verification
+from PIL import Image # Added for thumbnail generation
 
 app = FastAPI(
     title="Evidence‑MVP",
@@ -77,6 +79,10 @@ try:
 except Exception as e:
     print(f"Error initializing MinIO client: {e}")
     minio_client = None # Set to None if initialization fails
+
+# Add a testing mode configuration
+TESTING_MODE = os.getenv("TESTING_MODE", "False").lower() == "true"
+GPG_SKIP_VERIFICATION = os.getenv("GPG_SKIP_VERIFICATION", "False").lower() == "true"
 
 @app.post("/api/v1/upload")
 async def upload_evidence(file: UploadFile = File(...)):
@@ -392,6 +398,7 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
     is_zip_file = file.content_type in allowed_zip_types
 
     with tempfile.TemporaryDirectory() as temp_dir_root:
+        # TODO: For now this is not functioning 
         if is_zip_file:
             zip_file_path = os.path.join(temp_dir_root, file.filename)
             with open(zip_file_path, "wb") as buffer:
@@ -403,8 +410,22 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
                 with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                     zip_ref.extractall(extracted_files_path)
             except zipfile.BadZipFile:
-                raise HTTPException(status_code=400, detail="Invalid ZIP file.")
-
+                raise HTTPException(status_code=400, detail="Invalid ZIP file.")            # Check if this is a ProofMode ZIP file by looking for characteristics
+            # ProofMode files typically have .proof.json, .asc signatures, and pubkey.asc
+            proofmode_indicators = []
+            for root, dirs, files in os.walk(extracted_files_path):
+                for file in files:
+                    if file.endswith('.proof.json') or file.endswith('.asc') or file == 'pubkey.asc':
+                        proofmode_indicators.append(file)
+            
+            is_proofmode_format = len(proofmode_indicators) >= 2  # Need at least 2 indicators
+            
+            if is_proofmode_format:
+                # Redirect to ProofMode handler
+                # Reset file pointer and call the ProofMode upload handler
+                file.file.seek(0)
+                return await upload_proofmode_zip(file)
+            
             # ... [Existing manifest parsing and validation logic for ZIP files] ...
             # This logic should populate `validated_files_for_minio` (list of dicts with path and name)
             # and `processed_files_metadata_list` (from manifest validation)
@@ -435,7 +456,7 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
                 except Exception as e:
                     raise HTTPException(status_code=400, detail=f"Invalid metadata.yaml: {e}")
             else:
-                raise HTTPException(status_code=400, detail="Missing manifest (manifest.json or metadata.yaml) in ZIP root.")
+                raise HTTPException(status_code=400, detail="Missing manifest (manifest.json or metadata.yaml) in ZIP root. For ProofMode files, use the dedicated ProofMode endpoint.")
 
             validation_errors = []
             files_in_zip_to_check_paths = []
@@ -490,8 +511,12 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
                             file_data_stream,
                             length=file_stat.st_size,
                             content_type=mimetypes.guess_type(item['path'])[0] or 'application/octet-stream',
-                            object_lock_mode="COMPLIANCE",
-                            object_lock_retain_until_date=retain_until_date_iso
+                            metadata={
+                                "retention-mode": "COMPLIANCE",
+                                "retention-until": retain_until_date_iso,
+                                "upload-id": upload_id,
+                                "original-filename": item['name']
+                            }
                         )
                     minio_upload_results.append({
                         "minio_object_name": minio_object_name,
@@ -527,8 +552,12 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
                         file_data_stream,
                         length=file_size,
                         content_type=file.content_type or 'application/octet-stream',
-                        object_lock_mode="COMPLIANCE",
-                        object_lock_retain_until_date=retain_until_date_iso
+                        metadata={
+                            "retention-mode": "COMPLIANCE",
+                            "retention-until": retain_until_date_iso,
+                            "upload-id": upload_id,
+                            "original-filename": file.filename
+                        }
                     )
                 minio_upload_results.append({
                     "minio_object_name": minio_object_name,
@@ -552,3 +581,464 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
 # To make the new endpoint active, you might want to comment out or remove the old @app.post("/api/v1/upload")
 # and potentially rename @app.post("/api/v1/upload_refined") to @app.post("/api/v1/upload")
 # For now, both exist. Ensure SPA calls the correct one.
+
+# ProofMode-specific ZIP handling endpoint
+@app.post("/api/v1/upload/proofmode")
+async def upload_proofmode_zip(file: UploadFile = File(...)):
+    """
+    ProofMode ZIP upload handler that follows the forensic workflow:
+    1. Stream ZIP to temp file
+    2. Verify GPG signatures
+    3. Extract and validate contents
+    4. Store original ZIP in bundles/{sha256}.zip
+    5. Store media files in media/{sha256}.{ext}
+    6. Generate thumbnails
+    7. Prepare for PostgreSQL/PostGIS insertion
+    8. Prepare for immudb ledger entry
+    """
+    if not minio_client:
+        raise HTTPException(status_code=500, detail="MinIO client not initialized.")
+    
+    # Validate it's a ZIP file
+    allowed_zip_types = ["application/zip", "application/x-zip-compressed", "application/x-zip"]
+    if file.content_type not in allowed_zip_types:
+        raise HTTPException(status_code=400, detail="Only ZIP files are accepted for ProofMode uploads.")
+    
+    upload_id = str(uuid4())
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Step 1: Stream ZIP to temp file
+        zip_file_path = os.path.join(temp_dir, file.filename)
+        with open(zip_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Calculate ZIP SHA256 for immutable storage
+        zip_sha256 = await calculate_sha256(zip_file_path)
+        
+        # Step 2: Extract ZIP contents
+        extracted_path = os.path.join(temp_dir, "extracted")
+        try:
+            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                zip_ref.extractall(extracted_path)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file.")
+        
+        # Step 3: Verify GPG signatures
+        signature_verification = await verify_proofmode_signatures(extracted_path)
+        if not signature_verification["valid"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"GPG signature verification failed: {signature_verification['errors']}"
+            )
+        
+        # Step 4: Parse ProofMode metadata
+        proofmode_data = await parse_proofmode_contents(extracted_path)
+        if not proofmode_data["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ProofMode content validation failed: {proofmode_data['errors']}"
+            )
+        
+        # Step 5: Store original ZIP in bundles/{sha256}.zip (immutable)
+        bundle_object_name = f"bundles/{zip_sha256}.zip"
+        try:
+            with open(zip_file_path, 'rb') as zip_data:
+                zip_size = os.path.getsize(zip_file_path)
+                result = minio_client.put_object(
+                    MINIO_BUCKET,
+                    bundle_object_name,
+                    zip_data,
+                    length=zip_size,
+                    content_type="application/zip",
+                    metadata={"original_filename": file.filename, "upload_id": upload_id}
+                )
+                bundle_version_id = result.version_id
+        except S3Error as e:
+            raise HTTPException(status_code=500, detail=f"Failed to store bundle: {e}")
+        
+        # Step 6: Process and store media files
+        media_files = []
+        thumbnails = []
+        
+        for media_file in proofmode_data["media_files"]:
+            file_path = media_file["path"]
+            file_sha256 = await calculate_sha256(file_path)
+            file_extension = os.path.splitext(media_file["filename"])[1]
+            
+            # Store original media file
+            media_object_name = f"media/{file_sha256}{file_extension}"
+            try:
+                with open(file_path, 'rb') as media_data:
+                    file_size = os.path.getsize(file_path)
+                    media_result = minio_client.put_object(
+                        MINIO_BUCKET,
+                        media_object_name,
+                        media_data,
+                        length=file_size,
+                        content_type=media_file.get("mime_type", "application/octet-stream"),
+                        metadata={
+                            "original_filename": media_file["filename"],
+                            "bundle_sha256": zip_sha256,
+                            "upload_id": upload_id
+                        }
+                    )
+                    
+                media_files.append({
+                    "object_name": media_object_name,
+                    "sha256": file_sha256,
+                    "original_filename": media_file["filename"],
+                    "version_id": media_result.version_id,
+                    "size": file_size,
+                    "mime_type": media_file.get("mime_type"),
+                    "metadata": media_file.get("metadata", {})
+                })
+                
+                # Generate thumbnail for images
+                if media_file.get("mime_type", "").startswith("image/"):
+                    thumbnail_result = await generate_and_store_thumbnail(
+                        file_path, file_sha256, minio_client, MINIO_BUCKET, upload_id
+                    )
+                    if thumbnail_result:
+                        thumbnails.append(thumbnail_result)
+                        
+            except S3Error as e:
+                raise HTTPException(status_code=500, detail=f"Failed to store media file {media_file['filename']}: {e}")
+        
+        # Step 7: Prepare database records (for future PostgreSQL/PostGIS implementation)
+        bundle_record = {
+            "id": upload_id,
+            "sha256": zip_sha256,
+            "zip_path": bundle_object_name,
+            "capture_time": proofmode_data.get("capture_time"),
+            "location": proofmode_data.get("location"),
+            "device_info": proofmode_data.get("device_info"),
+            "network_info": proofmode_data.get("network_info"),
+            # "org_id": "placeholder"  # Add when user/org system is implemented
+        }
+        
+        file_records = []
+        for media_file in media_files:
+            file_record = {
+                "bundle_id": upload_id,
+                "sha256": media_file["sha256"],
+                "object_name": media_file["object_name"],
+                "original_filename": media_file["original_filename"],
+                "mime_type": media_file["mime_type"],
+                "size": media_file["size"],
+                "geometry": proofmode_data.get("location"),  # PostGIS POINT geometry
+                "metadata": media_file["metadata"]
+            }
+            file_records.append(file_record)
+        
+        # Step 8: Prepare immudb ledger entry
+        ledger_entry = {
+            "bundle_sha256": zip_sha256,
+            "bundle_version_id": bundle_version_id,
+            "media_version_ids": [mf["version_id"] for mf in media_files],
+            "timestamp": datetime.utcnow().isoformat(),
+            "upload_id": upload_id
+        }
+        
+        # TODO: Implement actual PostgreSQL/PostGIS insertion
+        # TODO: Implement actual immudb ledger entry
+        
+        return {
+            "id": upload_id,
+            "message": "ProofMode ZIP processed successfully",
+            "bundle": {
+                "sha256": zip_sha256,
+                "object_name": bundle_object_name,
+                "version_id": bundle_version_id
+            },
+            "media_files": media_files,
+            "thumbnails": thumbnails,
+            "bundle_record": bundle_record,
+            "file_records": file_records,
+            "ledger_entry": ledger_entry,
+            "signature_verification": signature_verification,
+            "proofmode_metadata": proofmode_data
+        }
+
+async def verify_proofmode_signatures(extracted_path: str) -> Dict[str, Any]:
+    """
+    Verify GPG signatures for ProofMode files.
+    ProofMode typically includes .asc signature files for JSON and media files.
+    """
+    try:
+        # Skip GPG verification in testing mode or if explicitly disabled
+        # TODO: Ensure this verification is fixed for production
+        if GPG_SKIP_VERIFICATION or TESTING_MODE:
+            # Find signature files to mock verification results
+            signature_files = []
+            for root, dirs, files in os.walk(extracted_path):
+                for file in files:
+                    if file.endswith('.asc'):
+                        signature_files.append(os.path.join(root, file))
+            
+            verification_results = []
+            for sig_file in signature_files:
+                data_file = sig_file[:-4]  # Remove .asc extension
+                verification_results.append({
+                    "signature_file": os.path.basename(sig_file),
+                    "data_file": os.path.basename(data_file),
+                    "valid": True,  # Mock as valid for testing
+                    "fingerprint": "TEST_FINGERPRINT_" + os.path.basename(data_file),
+                    "status": "signature valid (testing mode)",
+                    "trust_level": "TRUST_FULLY",
+                    "error": None
+                })
+            
+            return {
+                "valid": True,
+                "errors": [],
+                "verifications": verification_results,
+                "testing_mode": True
+            }
+        
+        # Initialize GPG for real verification
+        gpg = gnupg.GPG()
+        
+        verification_results = []
+        signature_files = []
+        
+        # Find all .asc signature files
+        for root, dirs, files in os.walk(extracted_path):
+            for file in files:
+                if file.endswith('.asc'):
+                    signature_files.append(os.path.join(root, file))
+        
+        if not signature_files:
+            return {
+                "valid": False,
+                "errors": ["No GPG signature files (.asc) found in ProofMode ZIP"],
+                "verifications": []
+            }
+        
+        all_valid = True
+        
+        for sig_file in signature_files:
+            # Determine the corresponding data file
+            data_file = sig_file[:-4]  # Remove .asc extension
+            
+            if not os.path.exists(data_file):
+                all_valid = False
+                verification_results.append({
+                    "signature_file": os.path.basename(sig_file),
+                    "data_file": os.path.basename(data_file),
+                    "valid": False,
+                    "error": "Corresponding data file not found"
+                })
+                continue
+            
+            # Verify signature
+            with open(sig_file, 'rb') as sig_f:
+                verification = gpg.verify_file(sig_f, data_file)
+                
+                verification_results.append({
+                    "signature_file": os.path.basename(sig_file),
+                    "data_file": os.path.basename(data_file),
+                    "valid": verification.valid,
+                    "fingerprint": verification.fingerprint,
+                    "status": verification.status,
+                    "trust_level": verification.trust_level,
+                    "error": None if verification.valid else verification.stderr
+                })
+                
+                if not verification.valid:
+                    all_valid = False
+        
+        return {
+            "valid": all_valid,
+            "errors": [] if all_valid else [v["error"] for v in verification_results if not v["valid"]],
+            "verifications": verification_results
+        }
+        
+    except Exception as e:
+        return {
+            "valid": False,
+            "errors": [f"GPG verification failed: {str(e)}"],
+            "verifications": []
+        }
+
+async def parse_proofmode_contents(extracted_path: str) -> Dict[str, Any]:
+    """
+    Parse ProofMode ZIP contents and extract metadata.
+    ProofMode typically includes JSON metadata files with location, device info, etc.
+    """
+    try:
+        media_files = []
+        metadata = {}
+        
+        # Common image extensions that ProofMode might contain
+        image_extensions = {'.jpg', '.jpeg', '.png', '.webp'}
+        
+        # Find JSON metadata file (ProofMode usually has a .json file with the same base name as the image)
+        json_files = []
+        image_files = []
+        
+        for root, dirs, files in os.walk(extracted_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_ext = os.path.splitext(file)[1].lower()
+                
+                if file.endswith('.json') and not file.startswith('.'):
+                    json_files.append(file_path)
+                elif file_ext in image_extensions:
+                    image_files.append(file_path)
+        
+        # Parse the main JSON metadata (should be similar to your json.example)
+        main_metadata = None
+        if json_files:
+            # Use the first JSON file as main metadata
+            with open(json_files[0], 'r') as f:
+                main_metadata = json.load(f)
+          # Extract location information for PostGIS
+        location = None
+        if main_metadata:
+            # ProofMode format uses "Location.Latitude" and "Location.Longitude" as keys
+            lat_key = "Location.Latitude"
+            lon_key = "Location.Longitude" 
+            alt_key = "Location.Altitude"
+            acc_key = "Location.Accuracy"
+            
+            if lat_key in main_metadata and lon_key in main_metadata:
+                try:
+                    lat = float(main_metadata[lat_key])
+                    lon = float(main_metadata[lon_key])
+                    location = {
+                        "type": "Point",
+                        "coordinates": [lon, lat],  # GeoJSON format: [lng, lat]
+                        "altitude": main_metadata.get(alt_key),
+                        "accuracy": main_metadata.get(acc_key)
+                    }
+                except (ValueError, TypeError):
+                    # Invalid coordinates, skip location
+                    pass
+          # Process media files (images with SHA256 in filename)
+        for image_file in image_files:
+            mime_type = mimetypes.guess_type(image_file)[0] or "application/octet-stream"
+            
+            # Calculate file size and SHA256
+            file_size = os.path.getsize(image_file)
+            calculated_hash = await calculate_sha256(image_file)
+            
+            # Look for corresponding JSON metadata based on SHA256 hash in filename
+            base_name = os.path.splitext(os.path.basename(image_file))[0]
+            corresponding_json = None
+            
+            # ProofMode uses SHA256 hash in filenames, try to match
+            for json_file in json_files:
+                json_basename = os.path.splitext(os.path.basename(json_file))[0]
+                # Remove .proof suffix if present
+                if json_basename.endswith('.proof'):
+                    json_basename = json_basename[:-6]
+                
+                # Check if the hash part matches
+                if calculated_hash in json_basename or json_basename in os.path.basename(image_file):
+                    with open(json_file, 'r') as f:
+                        corresponding_json = json.load(f)
+                    break
+            
+            media_files.append({
+                "path": image_file,
+                "filename": os.path.basename(image_file),
+                "sha256": calculated_hash,
+                "size": file_size,
+                "mime_type": mime_type,
+                "metadata": corresponding_json or main_metadata
+            })
+          # Extract capture time
+        capture_time = None
+        if main_metadata:
+            # ProofMode uses "Proof Generated" and "File Modified" fields
+            if "Proof Generated" in main_metadata:
+                capture_time = main_metadata["Proof Generated"]
+            elif "File Modified" in main_metadata:
+                capture_time = main_metadata["File Modified"]
+            elif "ProofGenerated" in main_metadata:  # Fallback
+                capture_time = main_metadata["ProofGenerated"]
+        
+        return {
+            "valid": True,
+            "errors": [],
+            "media_files": media_files,
+            "location": location,
+            "capture_time": capture_time,
+            "device_info": main_metadata.get("Device") if main_metadata else None,
+            "network_info": main_metadata.get("Network") if main_metadata else None,
+            "full_metadata": main_metadata
+        }
+        
+    except Exception as e:
+        return {
+            "valid": False,
+            "errors": [f"Failed to parse ProofMode contents: {str(e)}"],
+            "media_files": []
+        }
+
+async def generate_and_store_thumbnail(
+    image_path: str, 
+    original_sha256: str, 
+    minio_client: Minio, 
+    bucket: str, 
+    upload_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Generate a 1024px thumbnail and store it in MinIO.
+    """
+    try:
+        # Check if the file is actually an image by trying to open it
+        try:
+            with Image.open(image_path) as img:
+                # Convert to RGB if necessary (for PNG with transparency, etc.)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Calculate thumbnail size maintaining aspect ratio
+                original_size = img.size
+                img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                
+                # Save thumbnail to temporary file
+                thumbnail_path = image_path + "_thumb.jpg"
+                img.save(thumbnail_path, "JPEG", quality=85, optimize=True)
+                
+                # Calculate thumbnail SHA256
+                thumb_sha256 = await calculate_sha256(thumbnail_path)
+                
+                # Store thumbnail in MinIO
+                thumbnail_object_name = f"thumbnails/{thumb_sha256}.jpg"
+                with open(thumbnail_path, 'rb') as thumb_data:
+                    thumb_size = os.path.getsize(thumbnail_path)
+                    result = minio_client.put_object(
+                        bucket,
+                        thumbnail_object_name,
+                        thumb_data,
+                        length=thumb_size,
+                        content_type="image/jpeg",
+                        metadata={
+                            "original_sha256": original_sha256,
+                            "upload_id": upload_id,
+                            "thumbnail_size": "1024",
+                            "original_dimensions": f"{original_size[0]}x{original_size[1]}"
+                        }
+                    )
+                
+                # Clean up temporary thumbnail file
+                os.unlink(thumbnail_path)
+                
+                return {
+                    "object_name": thumbnail_object_name,
+                    "sha256": thumb_sha256,
+                    "version_id": result.version_id,
+                    "size": thumb_size,
+                    "dimensions": f"{img.width}x{img.height}",
+                    "original_dimensions": f"{original_size[0]}x{original_size[1]}"
+                }
+        except Exception as img_error:
+            # If it's not a valid image file, skip thumbnail generation
+            print(f"Skipping thumbnail generation for {image_path}: {img_error}")
+            return None
+            
+    except Exception as e:
+        print(f"Failed to generate thumbnail for {image_path}: {e}")
+        return None

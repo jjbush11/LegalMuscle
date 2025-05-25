@@ -11,3 +11,5 @@ geoalchemy2==0.14.0
 immudb-py==1.5.0
 shapely==2.0.2
 PyYAML==6.0.1 # Added for parsing eyeWitness metadata.yaml
+python-gnupg==0.5.2 # Added for ProofMode GPG verification
+Pillow==10.1.0 # Added for image processing and thumbnail generation

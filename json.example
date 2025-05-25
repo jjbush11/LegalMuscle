@@ -1,0 +1,39 @@
+{
+  "Device": {
+    "Hardware": "iPhone",
+    "Manufacturer": "Apple",
+    "DeviceID": "",
+    "ScreenSize": "6.1"
+  },
+  "File": {
+    "Path": "1746004259789.jpg",
+    "Modified": "2025-04-30T11:11:04.070+02:00",
+    "HashSHA256": "3a7ef2f14e190e5f651c8cd209b092912c5cb9a39036262baa90ebd495b9d821"
+  },
+  "Location": {
+    "Latitude": 52.373471204254706,
+    "Longitude": 4.836405744443201,
+    "Altitude": 22.08596420288086,
+    "Bearing": -1.0,
+    "Speed": 0.0,
+    "Accuracy": {
+      "Horizontal": 3.5293654955826277,
+      "Vertical": 3.0
+    },
+    "Provider": "gps",
+    "Timestamp": 1746004264498.43
+  },
+  "Network": {
+    "Connected": true,
+    "NetworkType": "Wifi",
+    "CellInfo": "0000000100000001",
+    "DataType": "CTRadioAccessTechnologyLTE",
+    "IPv4": "192.168.0.110",
+    "IPv6": "fe80::c9:116f:6809:9db7%en0"
+  },
+  "Locale": {
+    "Country": "US",
+    "Language": "en"
+  },
+  "ProofGenerated": "2025-04-30T11:11:04.476+02:00"
+}
