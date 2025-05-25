@@ -16,6 +16,8 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET}
       - IMMUDB_HOST=immudb
       - IMMUDB_PORT=3322
+      - GPG_SKIP_VERIFICATION=${GPG_SKIP_VERIFICATION}
+      - TESTING_MODE=${TESTING_MODE}
     depends_on:
       - db
       - minio
