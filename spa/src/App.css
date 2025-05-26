@@ -24,6 +24,40 @@ header p {
   color: #5f6368;
 }
 
+/* Main Navigation */
+.main-navigation {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.nav-button {
+  background: #fff;
+  border: 2px solid #e0e0e0;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  color: #5f6368;
+}
+
+.nav-button:hover {
+  border-color: #1a73e8;
+  color: #1a73e8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.2);
+}
+
+.nav-button.active {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: white;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+}
+
 main {
   flex: 1;
   background-color: #f8f9fa;
@@ -149,5 +183,16 @@ footer {
   
   main {
     padding: 1.5rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .main-navigation {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .nav-button {
+    width: 200px;
   }
 }

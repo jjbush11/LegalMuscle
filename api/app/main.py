@@ -9,6 +9,7 @@ import hashlib
 import json
 import yaml # For eyeWitness
 import os
+import logging
 from typing import List, Optional, Dict, Any
 from minio import Minio
 from minio.error import S3Error
@@ -23,6 +24,9 @@ from geoalchemy2.functions import ST_MakeEnvelope, ST_Intersects
 from shapely.geometry import Point
 from .database import get_db, create_tables
 from .models import EvidenceObject, EvidenceFile
+from .services.immudb_service import immudb_service
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Evidence‑MVP",
@@ -452,7 +456,38 @@ async def upload_evidence(file: UploadFile = File(...)):
         # Let's refine the non-ZIP path to include MinIO upload:
         pass # Covered by the refactor below
 
-    return response_payload
+    return response
+
+@app.get("/api/v1/audit/status")
+async def audit_status(db: Session = Depends(get_db)):
+    """Get audit and immudb status"""
+    try:
+        # Check immudb connectivity
+        client = immudb_service._get_client()
+        
+        # Get total evidence objects
+        total_objects = db.query(EvidenceObject).count()
+        
+        # Get objects with immudb transactions
+        with_immudb = db.query(EvidenceObject).filter(
+            EvidenceObject.immudb_tx_id.isnot(None)
+        ).count()
+        
+        return {
+            "status": "ok",
+            "immudb_connected": True,
+            "total_evidence_objects": total_objects,
+            "objects_with_immudb_tx": with_immudb,
+            "coverage_percentage": round((with_immudb / total_objects * 100) if total_objects > 0 else 0, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"Audit status check failed: {e}")
+        return {
+            "status": "error",
+            "immudb_connected": False,
+            "error": str(e)
+        }_payload
 
 
 @app.get("/api/v1/files/{object_name:path}") # Use path converter for object_name
@@ -479,7 +514,7 @@ async def get_file_presigned_url(object_name: str):
 
 # Refactoring the upload_evidence for cleaner MinIO integration for both ZIP and non-ZIP
 @app.post("/api/v1/upload_refined") # Keeping old one for now, will replace
-async def upload_evidence_refined(file: UploadFile = File(...)):
+async def upload_evidence_refined(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not minio_client:
         raise HTTPException(status_code=500, detail="MinIO client not initialized. Check server logs.")
 
@@ -656,14 +691,75 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
                         "upload-id": upload_id,
                         "original-filename": file.filename
                     }
-                )
-            minio_upload_results.append({
+                )            minio_upload_results.append({
                 "minio_object_name": minio_object_name,
                 "original_filename": file.filename,
                 "version_id": result.version_id, "etag": result.etag,
                 "content_type": file.content_type
             })
-            # TODO: Store version_id in DB
+            
+            # P8-T1: Store to database and write to immudb ledger
+            try:
+                # Create evidence object record
+                evidence_obj = EvidenceObject(
+                    id=upload_id,
+                    object_name=minio_object_name,
+                    sha256=calculated_hash,
+                    minio_version_id=result.version_id,
+                    object_type="general_upload",
+                    extra_metadata={
+                        "original_filename": file.filename,
+                        "content_type": file.content_type,
+                        "file_size": file_size
+                    }
+                )
+                db.add(evidence_obj)
+                
+                # Create evidence file record
+                evidence_file = EvidenceFile(
+                    object_id=upload_id,
+                    filename=file.filename,
+                    sha256=calculated_hash,
+                    mime_type=file.content_type,
+                    size_bytes=file_size,
+                    minio_object_name=minio_object_name,
+                    minio_version_id=result.version_id
+                )
+                db.add(evidence_file)
+                
+                # Commit database changes
+                db.commit()
+                
+                # Write transaction to immudb
+                try:
+                    immudb_tx_id = await immudb_service.write_evidence_transaction(
+                        object_id=evidence_obj.id,
+                        sha256=evidence_obj.sha256,
+                        minio_version_id=evidence_obj.minio_version_id or "",
+                        timestamp=evidence_obj.created_at,
+                        additional_data={
+                            "upload_type": "general",
+                            "filename": file.filename,
+                            "content_type": file.content_type,
+                            "file_size": file_size
+                        }
+                    )
+                    
+                    # Update database with immudb transaction ID
+                    evidence_obj.immudb_tx_id = immudb_tx_id
+                    db.commit()
+                    
+                    logger.info(f"General upload completed with immudb tx: {immudb_tx_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to write to immudb: {e}")
+                    # Don't fail the upload, just log the error
+                    
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Database insertion failed: {str(e)}")
+                # Continue with upload response even if DB fails
+                
         except S3Error as e_s3:
             raise HTTPException(status_code=500, detail=f"MinIO upload failed for {file.filename}: {e_s3}")
 
@@ -867,16 +963,51 @@ async def upload_proofmode_zip(file: UploadFile = File(...), db: Session = Depen
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Database insertion failed: {str(e)}")
-        
-        # Step 8: Prepare immudb ledger entry
-        ledger_entry = {
-            "bundle_sha256": zip_sha256,
-            "bundle_version_id": bundle_version_id,
-            "media_version_ids": [mf["version_id"] for mf in media_files],
-            "timestamp": datetime.utcnow().isoformat(),
-            "upload_id": upload_id        }
-        
-        # TODO: Implement actual immudb ledger entry
+          # Step 8: Write transaction to immudb ledger
+        try:
+            immudb_tx_id = await immudb_service.write_evidence_transaction(
+                object_id=evidence_obj.id,
+                sha256=evidence_obj.sha256,
+                minio_version_id=evidence_obj.minio_version_id or "",
+                timestamp=evidence_obj.created_at,
+                additional_data={
+                    "upload_type": "proofmode",
+                    "file_count": len(file_records),
+                    "total_size": sum(f.size_bytes or 0 for f in file_records),
+                    "bundle_version_id": bundle_version_id,
+                    "media_version_ids": [mf["version_id"] for mf in media_files],
+                    "signature_verification": signature_verification["valid"],
+                    "original_filename": file.filename
+                }
+            )
+            
+            # Update database with immudb transaction ID
+            evidence_obj.immudb_tx_id = immudb_tx_id
+            db.commit()
+            
+            logger.info(f"ProofMode upload completed with immudb tx: {immudb_tx_id}")
+            
+            ledger_entry = {
+                "immudb_tx_id": immudb_tx_id,
+                "bundle_sha256": zip_sha256,
+                "bundle_version_id": bundle_version_id,
+                "media_version_ids": [mf["version_id"] for mf in media_files],
+                "timestamp": datetime.utcnow().isoformat(),
+                "upload_id": upload_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to write to immudb: {e}")
+            # Don't fail the upload, just log the error
+            # The upload is still valid even without immudb logging
+            ledger_entry = {
+                "error": f"Failed to write to immudb: {str(e)}",
+                "bundle_sha256": zip_sha256,
+                "bundle_version_id": bundle_version_id,
+                "media_version_ids": [mf["version_id"] for mf in media_files],
+                "timestamp": datetime.utcnow().isoformat(),
+                "upload_id": upload_id
+            }
         
         return {
             "id": upload_id,
