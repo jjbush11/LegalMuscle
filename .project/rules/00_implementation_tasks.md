@@ -188,25 +188,27 @@ repo bootstrap to final documentation.
 
 ## P8 · immudb Ledger (Day 5‑6)
 
-* [ ] **P8‑T1 Write transaction**
+* [X] **P8‑T1 Write transaction**
 
-  * [ ] After successful DB commit, send JSON (object\_id, sha256, minio\_version\_id, timestamp) to immudb.
-  * [ ] Save immudb `tx_id` back in Postgres.
-* [ ] **P8‑T2 Audit CLI**
+  * [X] After successful DB commit, send JSON (object\_id, sha256, minio\_version\_id, timestamp) to immudb.
+  * [X] Save immudb `tx_id` back in Postgres.
+* [X] **P8‑T2 Audit CLI**
 
-  * [ ] Add `ops/audit.sh` that runs nightly: verifies root hash, emails on mismatch.
+  * [X] Add `ops/audit.sh` that runs nightly: verifies root hash, emails on mismatch.
+
+* [ ] **P8-T3 Fix Alembic migration**
 
 ---
 
 ## P9 · Evidence Map UI (Day 5‑6)
 
-* [ ] **P9‑T1 Leaflet map**
+* [X] **P9‑T1 Leaflet map**
 
-  * [ ] Load GeoJSON; add marker cluster layer.
-  * [ ] On marker click, open sidebar with file list, SHA‑256, captured date.
-* [ ] **P9‑T2 Thumbnail fetch**
+  * [X] Load GeoJSON; add marker cluster layer.
+  * [X] On marker click, open sidebar with file list, SHA‑256, captured date.
+* [X] **P9‑T2 Thumbnail fetch**
 
-  * [ ] Use presigned URLs to show image previews (if image filetype).
+  * [X] Use presigned URLs to show image previews (if image filetype).
 
 ---
 

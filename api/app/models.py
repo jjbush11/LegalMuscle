@@ -22,6 +22,7 @@ class EvidenceObject(Base):
     sha256 = Column(String(64), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     minio_version_id = Column(String, nullable=True)  # MinIO version ID for object lock
+    immudb_tx_id = Column(String, nullable=True)  # immudb transaction ID for P8-T1
     
     # Type differentiation
     object_type = Column(String, nullable=False)  # 'proofmode_bundle', 'general_upload', 'tella_bundle', etc.
