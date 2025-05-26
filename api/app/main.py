@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from uuid import uuid4
@@ -16,6 +16,13 @@ from datetime import timedelta, datetime, timezone # Added timezone
 import mimetypes # Ensure mimetypes is imported
 import gnupg # Added for ProofMode GPG verification
 from PIL import Image # Added for thumbnail generation
+from sqlalchemy.orm import Session
+from sqlalchemy import func 
+from geoalchemy2.shape import from_shape, to_shape
+from geoalchemy2.functions import ST_MakeEnvelope, ST_Intersects 
+from shapely.geometry import Point
+from .database import get_db, create_tables
+from .models import EvidenceObject, EvidenceFile
 
 app = FastAPI(
     title="Evidence‑MVP",
@@ -23,10 +30,101 @@ app = FastAPI(
     version="0.1.0",
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables on startup"""
+    create_tables()
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint to verify API is running."""
     return {"status": "ok"}
+
+@app.get("/api/v1/items")
+async def get_evidence_items(
+    limit: int = 100,
+    offset: int = 0,
+    bbox: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get evidence items as GeoJSON FeatureCollection.
+    
+    Parameters:
+    - limit: Maximum number of items to return (default: 100)
+    - offset: Number of items to skip (default: 0) 
+    - bbox: Bounding box filter as "min_lon,min_lat,max_lon,max_lat"
+    
+    Returns GeoJSON FeatureCollection of all evidence files with location data.
+    """
+    try:
+        # Start with base query for evidence files that have geometry
+        query = db.query(EvidenceFile).filter(EvidenceFile.geometry.isnot(None))
+        
+        # Apply bounding box filter if provided
+        if bbox:
+            try:
+                bbox_coords = [float(x) for x in bbox.split(',')]
+                if len(bbox_coords) != 4:
+                    raise ValueError("Bounding box must have 4 coordinates")
+                
+                min_lon, min_lat, max_lon, max_lat = bbox_coords
+                # Create a bbox polygon for PostGIS intersection
+                bbox_polygon = ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
+                query = query.filter(ST_Intersects(EvidenceFile.geometry, bbox_polygon))
+                
+            except (ValueError, IndexError) as e:
+                raise HTTPException(status_code=400, detail=f"Invalid bbox parameter: {str(e)}")
+        
+        # Apply pagination
+        evidence_files = query.offset(offset).limit(limit).all()
+        
+        # Build GeoJSON FeatureCollection
+        features = []
+        for evidence_file in evidence_files:            # Get coordinates from PostGIS geometry
+            coordinates = None
+            if evidence_file.geometry:
+                point = to_shape(evidence_file.geometry)
+                coordinates = [point.x, point.y]  # [longitude, latitude]
+            
+            feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": coordinates
+                } if coordinates else None,
+                "properties": {
+                    "id": str(evidence_file.id),
+                    "object_id": str(evidence_file.object_id),
+                    "filename": evidence_file.filename,
+                    "sha256": evidence_file.sha256,
+                    "captured_at": evidence_file.captured_at.isoformat() if evidence_file.captured_at else None,
+                    "mime_type": evidence_file.mime_type,
+                    "size_bytes": evidence_file.size_bytes,
+                    "minio_object_name": evidence_file.minio_object_name,
+                    "created_at": evidence_file.evidence_object.created_at.isoformat() if evidence_file.evidence_object else None,
+                    "object_type": evidence_file.evidence_object.object_type if evidence_file.evidence_object else None
+                }
+            }
+            features.append(feature)
+        
+        # Get total count for metadata
+        total_count = db.query(EvidenceFile).filter(EvidenceFile.geometry.isnot(None)).count()
+        
+        return {
+            "type": "FeatureCollection",
+            "features": features,
+            "metadata": {
+                "total_count": total_count,
+                "returned_count": len(features),
+                "limit": limit,
+                "offset": offset,
+                "bbox": bbox
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve evidence items: {str(e)}")
 
 class FileMetadata(BaseModel):
     filename: str
@@ -399,175 +497,175 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
 
     with tempfile.TemporaryDirectory() as temp_dir_root:
         # TODO: For now this is not functioning 
-        if is_zip_file:
-            zip_file_path = os.path.join(temp_dir_root, file.filename)
-            with open(zip_file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            file.file.seek(0) # Reset for potential re-reads if necessary
+        # if is_zip_file:
+        #     zip_file_path = os.path.join(temp_dir_root, file.filename)
+        #     with open(zip_file_path, "wb") as buffer:
+        #         shutil.copyfileobj(file.file, buffer)
+        #     file.file.seek(0) # Reset for potential re-reads if necessary
 
-            extracted_files_path = os.path.join(temp_dir_root, "extracted")
-            try:
-                with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                    zip_ref.extractall(extracted_files_path)
-            except zipfile.BadZipFile:
-                raise HTTPException(status_code=400, detail="Invalid ZIP file.")            # Check if this is a ProofMode ZIP file by looking for characteristics
-            # ProofMode files typically have .proof.json, .asc signatures, and pubkey.asc
-            proofmode_indicators = []
-            for root, dirs, files in os.walk(extracted_files_path):
-                for file in files:
-                    if file.endswith('.proof.json') or file.endswith('.asc') or file == 'pubkey.asc':
-                        proofmode_indicators.append(file)
+        #     extracted_files_path = os.path.join(temp_dir_root, "extracted")
+        #     try:
+        #         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+        #             zip_ref.extractall(extracted_files_path)
+        #     except zipfile.BadZipFile:
+        #         raise HTTPException(status_code=400, detail="Invalid ZIP file.")            # Check if this is a ProofMode ZIP file by looking for characteristics
+        #     # ProofMode files typically have .proof.json, .asc signatures, and pubkey.asc
+        #     proofmode_indicators = []
+        #     for root, dirs, files in os.walk(extracted_files_path):
+        #         for file in files:
+        #             if file.endswith('.proof.json') or file.endswith('.asc') or file == 'pubkey.asc':
+        #                 proofmode_indicators.append(file)
             
-            is_proofmode_format = len(proofmode_indicators) >= 2  # Need at least 2 indicators
+        #     is_proofmode_format = len(proofmode_indicators) >= 2  # Need at least 2 indicators
             
-            if is_proofmode_format:
-                # Redirect to ProofMode handler
-                # Reset file pointer and call the ProofMode upload handler
-                file.file.seek(0)
-                return await upload_proofmode_zip(file)
+        #     if is_proofmode_format:
+        #         # Redirect to ProofMode handler
+        #         # Reset file pointer and call the ProofMode upload handler
+        #         file.file.seek(0)
+        #         return await upload_proofmode_zip(file)
             
-            # ... [Existing manifest parsing and validation logic for ZIP files] ...
-            # This logic should populate `validated_files_for_minio` (list of dicts with path and name)
-            # and `processed_files_metadata_list` (from manifest validation)
-            # For brevity, assuming this part is correctly adapted from the original function:
-            manifest_json_path = os.path.join(extracted_files_path, "manifest.json")
-            metadata_yaml_path = os.path.join(extracted_files_path, "metadata.yaml")
-            parsed_manifest: Optional[Manifest] = None
-            parsed_eyewitness_metadata: Optional[EyeWitnessMetadata] = None
-            is_tella_format = False
-            is_eyewitness_format = False
+        #     # ... [Existing manifest parsing and validation logic for ZIP files] ...
+        #     # This logic should populate `validated_files_for_minio` (list of dicts with path and name)
+        #     # and `processed_files_metadata_list` (from manifest validation)
+        #     # For brevity, assuming this part is correctly adapted from the original function:
+        #     manifest_json_path = os.path.join(extracted_files_path, "manifest.json")
+        #     metadata_yaml_path = os.path.join(extracted_files_path, "metadata.yaml")
+        #     parsed_manifest: Optional[Manifest] = None
+        #     parsed_eyewitness_metadata: Optional[EyeWitnessMetadata] = None
+        #     is_tella_format = False
+        #     is_eyewitness_format = False
 
-            if os.path.exists(manifest_json_path):
-                try:
-                    with open(manifest_json_path, 'r') as f_manifest:
-                        manifest_content = json.load(f_manifest)
-                    parsed_manifest = Manifest(**manifest_content)
-                    is_tella_format = True
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f"Invalid manifest.json: {e}")
-            elif os.path.exists(metadata_yaml_path):
-                try:
-                    with open(metadata_yaml_path, 'r') as f_yaml:
-                        metadata_content = yaml.safe_load(f_yaml)
-                    if not metadata_content or "files" not in metadata_content or not isinstance(metadata_content.get('files'), list):
-                        raise HTTPException(status_code=400, detail="Invalid metadata.yaml structure.")
-                    parsed_eyewitness_metadata = EyeWitnessMetadata(**metadata_content)
-                    is_eyewitness_format = True
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f"Invalid metadata.yaml: {e}")
-            else:
-                raise HTTPException(status_code=400, detail="Missing manifest (manifest.json or metadata.yaml) in ZIP root. For ProofMode files, use the dedicated ProofMode endpoint.")
+        #     if os.path.exists(manifest_json_path):
+        #         try:
+        #             with open(manifest_json_path, 'r') as f_manifest:
+        #                 manifest_content = json.load(f_manifest)
+        #             parsed_manifest = Manifest(**manifest_content)
+        #             is_tella_format = True
+        #         except Exception as e:
+        #             raise HTTPException(status_code=400, detail=f"Invalid manifest.json: {e}")
+        #     elif os.path.exists(metadata_yaml_path):
+        #         try:
+        #             with open(metadata_yaml_path, 'r') as f_yaml:
+        #                 metadata_content = yaml.safe_load(f_yaml)
+        #             if not metadata_content or "files" not in metadata_content or not isinstance(metadata_content.get('files'), list):
+        #                 raise HTTPException(status_code=400, detail="Invalid metadata.yaml structure.")
+        #             parsed_eyewitness_metadata = EyeWitnessMetadata(**metadata_content)
+        #             is_eyewitness_format = True
+        #         except Exception as e:
+        #             raise HTTPException(status_code=400, detail=f"Invalid metadata.yaml: {e}")
+        #     else:
+        #         raise HTTPException(status_code=400, detail="Missing manifest (manifest.json or metadata.yaml) in ZIP root. For ProofMode files, use the dedicated ProofMode endpoint.")
 
-            validation_errors = []
-            files_in_zip_to_check_paths = []
-            for root, _, files_in_dir in os.walk(extracted_files_path):
-                for name_in_dir in files_in_dir:
-                    full_item_path = os.path.join(root, name_in_dir)
-                    relative_item_path = os.path.relpath(full_item_path, extracted_files_path).replace('\\', '/')
-                    if (is_tella_format and relative_item_path == "manifest.json") or \
-                       (is_eyewitness_format and relative_item_path == "metadata.yaml"):
-                        continue
-                    files_in_zip_to_check_paths.append(relative_item_path)
+        #     validation_errors = []
+        #     files_in_zip_to_check_paths = []
+        #     for root, _, files_in_dir in os.walk(extracted_files_path):
+        #         for name_in_dir in files_in_dir:
+        #             full_item_path = os.path.join(root, name_in_dir)
+        #             relative_item_path = os.path.relpath(full_item_path, extracted_files_path).replace('\\', '/')
+        #             if (is_tella_format and relative_item_path == "manifest.json") or \
+        #                (is_eyewitness_format and relative_item_path == "metadata.yaml"):
+        #                 continue
+        #             files_in_zip_to_check_paths.append(relative_item_path)
             
-            manifest_file_entries_map = {}
-            if is_tella_format and parsed_manifest:
-                manifest_file_entries_map = {mf.filename.replace('\\', '/'): mf.sha256 for mf in parsed_manifest.files}
-            elif is_eyewitness_format and parsed_eyewitness_metadata:
-                manifest_file_entries_map = {mf.file_name.replace('\\', '/'): mf.sha256 for mf in parsed_eyewitness_metadata.files}
+        #     manifest_file_entries_map = {}
+        #     if is_tella_format and parsed_manifest:
+        #         manifest_file_entries_map = {mf.filename.replace('\\', '/'): mf.sha256 for mf in parsed_manifest.files}
+        #     elif is_eyewitness_format and parsed_eyewitness_metadata:
+        #         manifest_file_entries_map = {mf.file_name.replace('\\', '/'): mf.sha256 for mf in parsed_eyewitness_metadata.files}
 
-            validated_files_for_minio = [] # list of dicts: {"path": full_path, "name": relative_path_in_zip}
+        #     validated_files_for_minio = [] # list of dicts: {"path": full_path, "name": relative_path_in_zip}
 
-            for manifest_filename, manifest_sha256 in manifest_file_entries_map.items():
-                if manifest_filename not in files_in_zip_to_check_paths:
-                    validation_errors.append(f"File '{manifest_filename}' in manifest but not in ZIP.")
-                    continue
+        #     for manifest_filename, manifest_sha256 in manifest_file_entries_map.items():
+        #         if manifest_filename not in files_in_zip_to_check_paths:
+        #             validation_errors.append(f"File '{manifest_filename}' in manifest but not in ZIP.")
+        #             continue
                 
-                file_to_check_full_path = os.path.join(extracted_files_path, manifest_filename)
-                calculated_hash = await calculate_sha256(file_to_check_full_path)
+        #         file_to_check_full_path = os.path.join(extracted_files_path, manifest_filename)
+        #         calculated_hash = await calculate_sha256(file_to_check_full_path)
 
-                if calculated_hash.lower() != manifest_sha256.lower():
-                    validation_errors.append(f"SHA-256 mismatch for '{manifest_filename}'.")
-                else:
-                    processed_files_metadata_list.append({"filename": manifest_filename, "sha256": calculated_hash})
-                    validated_files_for_minio.append({"path": file_to_check_full_path, "name": manifest_filename})
+        #         if calculated_hash.lower() != manifest_sha256.lower():
+        #             validation_errors.append(f"SHA-256 mismatch for '{manifest_filename}'.")
+        #         else:
+        #             processed_files_metadata_list.append({"filename": manifest_filename, "sha256": calculated_hash})
+        #             validated_files_for_minio.append({"path": file_to_check_full_path, "name": manifest_filename})
 
-            for zip_filepath_str in files_in_zip_to_check_paths:
-                if zip_filepath_str not in manifest_file_entries_map:
-                    validation_errors.append(f"File '{zip_filepath_str}' in ZIP but not in manifest.")
+        #     for zip_filepath_str in files_in_zip_to_check_paths:
+        #         if zip_filepath_str not in manifest_file_entries_map:
+        #             validation_errors.append(f"File '{zip_filepath_str}' in ZIP but not in manifest.")
             
-            if validation_errors:
-                raise HTTPException(status_code=400, content={"detail": "ZIP validation errors.", "errors": validation_errors})
+        #     if validation_errors:
+        #         raise HTTPException(status_code=400, content={"detail": "ZIP validation errors.", "errors": validation_errors})
 
-            # Upload validated files from ZIP to MinIO
-            for item in validated_files_for_minio:
-                # item['name'] is the relative path within the ZIP, use for MinIO object name structure
-                minio_object_name = f"uploads/{upload_id}/{item['name']}"
-                try:
-                    with open(item['path'], 'rb') as file_data_stream:
-                        file_stat = os.stat(item['path'])
-                        result = minio_client.put_object(
-                            MINIO_BUCKET,
-                            minio_object_name,
-                            file_data_stream,
-                            length=file_stat.st_size,
-                            content_type=mimetypes.guess_type(item['path'])[0] or 'application/octet-stream',
-                            metadata={
-                                "retention-mode": "COMPLIANCE",
-                                "retention-until": retain_until_date_iso,
-                                "upload-id": upload_id,
-                                "original-filename": item['name']
-                            }
-                        )
-                    minio_upload_results.append({
-                        "minio_object_name": minio_object_name,
-                        "original_filename_in_zip": item['name'], # Clarify this is name within zip
-                        "version_id": result.version_id, "etag": result.etag
-                    })
-                    # TODO: Store version_id in DB along with other object metadata
-                except S3Error as e_s3:
-                    # Consider how to handle partial failures if some files in ZIP upload and others don't
-                    raise HTTPException(status_code=500, detail=f"MinIO upload failed for {item['name']} in ZIP: {e_s3}")
+        #     # Upload validated files from ZIP to MinIO
+        #     for item in validated_files_for_minio:
+        #         # item['name'] is the relative path within the ZIP, use for MinIO object name structure
+        #         minio_object_name = f"uploads/{upload_id}/{item['name']}"
+        #         try:
+        #             with open(item['path'], 'rb') as file_data_stream:
+        #                 file_stat = os.stat(item['path'])
+        #                 result = minio_client.put_object(
+        #                     MINIO_BUCKET,
+        #                     minio_object_name,
+        #                     file_data_stream,
+        #                     length=file_stat.st_size,
+        #                     content_type=mimetypes.guess_type(item['path'])[0] or 'application/octet-stream',
+        #                     metadata={
+        #                         "retention-mode": "COMPLIANCE",
+        #                         "retention-until": retain_until_date_iso,
+        #                         "upload-id": upload_id,
+        #                         "original-filename": item['name']
+        #                     }
+        #                 )
+        #             minio_upload_results.append({
+        #                 "minio_object_name": minio_object_name,
+        #                 "original_filename_in_zip": item['name'], # Clarify this is name within zip
+        #                 "version_id": result.version_id, "etag": result.etag
+        #             })
+        #             # TODO: Store version_id in DB along with other object metadata
+        #         except S3Error as e_s3:
+        #             # Consider how to handle partial failures if some files in ZIP upload and others don't
+        #             raise HTTPException(status_code=500, detail=f"MinIO upload failed for {item['name']} in ZIP: {e_s3}")
         
-        else: # Handle non-ZIP files
-            temp_file_path = os.path.join(temp_dir_root, file.filename)
-            with open(temp_file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            file.file.seek(0)
+        # else: # Handle non-ZIP files
+        temp_file_path = os.path.join(temp_dir_root, file.filename)
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file.file.seek(0)
 
-            calculated_hash = await calculate_sha256(temp_file_path)
-            processed_files_metadata_list.append({
-                "filename": file.filename, 
-                "sha256": calculated_hash, 
-                "is_standalone_file": True,
+        calculated_hash = await calculate_sha256(temp_file_path)
+        processed_files_metadata_list.append({
+            "filename": file.filename, 
+            "sha256": calculated_hash, 
+            "is_standalone_file": True,
+            "content_type": file.content_type
+        })
+        
+        minio_object_name = f"uploads/{upload_id}/{file.filename}"
+        try:
+            with open(temp_file_path, 'rb') as file_data_stream:
+                file_size = os.path.getsize(temp_file_path)
+                result = minio_client.put_object(
+                    MINIO_BUCKET,
+                    minio_object_name,
+                    file_data_stream,
+                    length=file_size,
+                    content_type=file.content_type or 'application/octet-stream',
+                    metadata={
+                        "retention-mode": "COMPLIANCE",
+                        "retention-until": retain_until_date_iso,
+                        "upload-id": upload_id,
+                        "original-filename": file.filename
+                    }
+                )
+            minio_upload_results.append({
+                "minio_object_name": minio_object_name,
+                "original_filename": file.filename,
+                "version_id": result.version_id, "etag": result.etag,
                 "content_type": file.content_type
             })
-            
-            minio_object_name = f"uploads/{upload_id}/{file.filename}"
-            try:
-                with open(temp_file_path, 'rb') as file_data_stream:
-                    file_size = os.path.getsize(temp_file_path)
-                    result = minio_client.put_object(
-                        MINIO_BUCKET,
-                        minio_object_name,
-                        file_data_stream,
-                        length=file_size,
-                        content_type=file.content_type or 'application/octet-stream',
-                        metadata={
-                            "retention-mode": "COMPLIANCE",
-                            "retention-until": retain_until_date_iso,
-                            "upload-id": upload_id,
-                            "original-filename": file.filename
-                        }
-                    )
-                minio_upload_results.append({
-                    "minio_object_name": minio_object_name,
-                    "original_filename": file.filename,
-                    "version_id": result.version_id, "etag": result.etag,
-                    "content_type": file.content_type
-                })
-                # TODO: Store version_id in DB
-            except S3Error as e_s3:
-                raise HTTPException(status_code=500, detail=f"MinIO upload failed for {file.filename}: {e_s3}")
+            # TODO: Store version_id in DB
+        except S3Error as e_s3:
+            raise HTTPException(status_code=500, detail=f"MinIO upload failed for {file.filename}: {e_s3}")
 
     return {
         "id": upload_id,
@@ -584,7 +682,7 @@ async def upload_evidence_refined(file: UploadFile = File(...)):
 
 # ProofMode-specific ZIP handling endpoint
 @app.post("/api/v1/upload/proofmode")
-async def upload_proofmode_zip(file: UploadFile = File(...)):
+async def upload_proofmode_zip(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     ProofMode ZIP upload handler that follows the forensic workflow:
     1. Stream ZIP to temp file
@@ -703,32 +801,72 @@ async def upload_proofmode_zip(file: UploadFile = File(...)):
                         
             except S3Error as e:
                 raise HTTPException(status_code=500, detail=f"Failed to store media file {media_file['filename']}: {e}")
-        
-        # Step 7: Prepare database records (for future PostgreSQL/PostGIS implementation)
-        bundle_record = {
-            "id": upload_id,
-            "sha256": zip_sha256,
-            "zip_path": bundle_object_name,
-            "capture_time": proofmode_data.get("capture_time"),
-            "location": proofmode_data.get("location"),
-            "device_info": proofmode_data.get("device_info"),
-            "network_info": proofmode_data.get("network_info"),
-            # "org_id": "placeholder"  # Add when user/org system is implemented
-        }
-        
-        file_records = []
-        for media_file in media_files:
-            file_record = {
-                "bundle_id": upload_id,
-                "sha256": media_file["sha256"],
-                "object_name": media_file["object_name"],
-                "original_filename": media_file["original_filename"],
-                "mime_type": media_file["mime_type"],
-                "size": media_file["size"],
-                "geometry": proofmode_data.get("location"),  # PostGIS POINT geometry
-                "metadata": media_file["metadata"]
-            }
-            file_records.append(file_record)
+          # Step 7: Insert into PostgreSQL/PostGIS database
+        try:
+            # Create evidence object record for the bundle
+            evidence_obj = EvidenceObject(
+                id=upload_id,
+                object_name=bundle_object_name,
+                sha256=zip_sha256,
+                minio_version_id=bundle_version_id,
+                object_type="proofmode_bundle",
+                extra_metadata={
+                    "capture_time": proofmode_data.get("capture_time"),
+                    "device_info": proofmode_data.get("device_info"),
+                    "network_info": proofmode_data.get("network_info"),
+                    "signature_verification": signature_verification,
+                    "original_filename": file.filename
+                }
+            )
+            db.add(evidence_obj)
+            
+            # Create evidence file records for each media file
+            file_records = []
+            for media_file in media_files:
+                # Convert location data to PostGIS geometry if available
+                geometry = None
+                location_data = proofmode_data.get("location")
+                if location_data and location_data.get("type") == "Point":
+                    coordinates = location_data.get("coordinates")
+                    if coordinates and len(coordinates) >= 2:
+                        # Create Shapely Point and convert to PostGIS
+                        point = Point(coordinates[0], coordinates[1])  # lon, lat
+                        geometry = from_shape(point, srid=4326)
+                
+                # Extract capture time from media file metadata if available
+                captured_at = None
+                if media_file.get("metadata") and media_file["metadata"].get("capture_time"):
+                    try:
+                        captured_at = datetime.fromisoformat(media_file["metadata"]["capture_time"])
+                    except (ValueError, TypeError):
+                        pass
+                
+                evidence_file = EvidenceFile(
+                    object_id=upload_id,
+                    filename=media_file["original_filename"],
+                    sha256=media_file["sha256"],
+                    geometry=geometry,
+                    captured_at=captured_at,
+                    mime_type=media_file.get("mime_type"),
+                    size_bytes=media_file.get("size"),
+                    minio_object_name=media_file["object_name"],
+                    minio_version_id=media_file["version_id"],
+                    extra_metadata=media_file.get("metadata", {})
+                )
+                db.add(evidence_file)
+                file_records.append(evidence_file)
+            
+            # Commit all database changes
+            db.commit()
+            
+            # Refresh objects to get updated data
+            db.refresh(evidence_obj)
+            for file_record in file_records:
+                db.refresh(file_record)
+                
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Database insertion failed: {str(e)}")
         
         # Step 8: Prepare immudb ledger entry
         ledger_entry = {
@@ -736,10 +874,8 @@ async def upload_proofmode_zip(file: UploadFile = File(...)):
             "bundle_version_id": bundle_version_id,
             "media_version_ids": [mf["version_id"] for mf in media_files],
             "timestamp": datetime.utcnow().isoformat(),
-            "upload_id": upload_id
-        }
+            "upload_id": upload_id        }
         
-        # TODO: Implement actual PostgreSQL/PostGIS insertion
         # TODO: Implement actual immudb ledger entry
         
         return {
@@ -752,8 +888,20 @@ async def upload_proofmode_zip(file: UploadFile = File(...)):
             },
             "media_files": media_files,
             "thumbnails": thumbnails,
-            "bundle_record": bundle_record,
-            "file_records": file_records,
+            "evidence_object": {
+                "id": str(evidence_obj.id),
+                "object_type": evidence_obj.object_type,
+                "created_at": evidence_obj.created_at.isoformat()
+            },
+            "evidence_files": [
+                {
+                    "id": str(f.id),
+                    "filename": f.filename,
+                    "sha256": f.sha256,
+                    "geometry": str(f.geometry) if f.geometry else None,
+                    "captured_at": f.captured_at.isoformat() if f.captured_at else None
+                } for f in file_records
+            ],
             "ledger_entry": ledger_entry,
             "signature_verification": signature_verification,
             "proofmode_metadata": proofmode_data

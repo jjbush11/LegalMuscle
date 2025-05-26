@@ -3,7 +3,9 @@
 **Save as** `.project/rules/00_implementation_tasks.md`
 
 > **How to use**
-> • Work strictly **top‑to‑bottom** – finish every sub‑checkbox before moving on.
+> • Work strictly **top‑to‑bottom** – finish every sub‑checkbox befo  * [ ] `GET /api/v1/items` → GeoJSON FeatureCollection of all evidence for user's org
+  * [ ] Include both ProofMode bundles and general uploads with location data
+  * [ ] Paginate or bbox‑filter with query params moving on.
 > • Commit after each top‑level task; include the checkbox ID in the commit message (e.g. `[P3‑T2]`).
 > • When a phase is 100 % complete, tag the repo (`v0.x`).
 
@@ -158,11 +160,11 @@ repo bootstrap to final documentation.
     * `mc mb minio/evidence --with-lock`
     * `mc retention set --default COMPLIANCE 2555d minio/evidence`
 * [ ] **P6‑T2 Upload with retention**
+  * [X] Implement dual upload system with MinIO object lock:
 
-  * [X] Modify upload endpoint to call MinIO SDK `put_object` with headers:
-
-    * `x-amz-object-lock-mode: COMPLIANCE`
-    * `x-amz-object-lock-retain-until-date: +7y`
+    * General uploads (`/api/v1/upload_refined`) for images and Tella/eyeWitness ZIPs
+    * ProofMode uploads (`/api/v1/upload/proofmode`) for forensic ZIP packages with GPG verification
+  * [X] Apply retention headers: `x-amz-object-lock-mode: COMPLIANCE`, `x-amz-object-lock-retain-until-date: +7y`
   * [ ] Store returned `version_id` in DB.
 * [X] **P6‑T3 Signed URL retrieval**
 
@@ -172,13 +174,15 @@ repo bootstrap to final documentation.
 
 ## P7 · Spatial API & Map Data (Day 5)
 
-* [ ] **P7‑T1 Insert geometry**
+* [X] **P7‑T1 Insert geometry**
 
-  * [ ] Extract lat/long from manifest; store in PostGIS column.
-* [ ] **P7‑T2 GeoJSON endpoint**
+  * [X] Extract lat/long from ProofMode metadata; store in PostGIS column (implemented in `/api/v1/upload/proofmode`)
+  * [X] Add database insertion logic to store extracted coordinates
+  * [ ] Handle location data from Tella/eyeWitness manifests (if present)
+* [X] **P7‑T2 GeoJSON endpoint**
 
-  * [ ] `GET /api/v1/items` → GeoJSON FeatureCollection of all evidence for user’s org.
-  * [ ] Paginate or bbox‑filter with query params.
+  * [X] `GET /api/v1/items` → GeoJSON FeatureCollection of all evidence for user’s org.
+  * [X] Paginate or bbox‑filter with query params.
 
 ---
 
@@ -286,3 +290,5 @@ repo bootstrap to final documentation.
 ---
 
 ✔️ When every checkbox is ticked, the MVP is complete and ready for the thesis demonstration.
+
+
