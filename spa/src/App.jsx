@@ -30,7 +30,9 @@ function App() {
       
       <main>
         {currentView === 'upload' && <FileUpload />}
-        {currentView === 'map' && <EvidenceMap />}
+        {currentView === 'map' && (
+          <EvidenceMap onBack={() => setCurrentView('upload')} />
+        )}
       </main>
       
       <footer>

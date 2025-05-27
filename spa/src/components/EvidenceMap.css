@@ -1,45 +1,111 @@
 /* Evidence Map Styles */
 .evidence-map-container {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  background: white;
 }
 
 .map-header {
   text-align: center;
-  margin-bottom: 20px;
+  padding: 10px 20px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  position: relative;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.map-header h2 {
+.back-button {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.back-button:hover {
+  background: #1557b0;
+}
+
+.header-content {
+  flex: 1;
+  text-align: center;
+}
+
+.header-content h2 {
   color: #1a73e8;
-  margin-bottom: 8px;
+  margin: 0 0 4px 0;
+  font-size: 18px;
 }
 
-.map-header p {
+.header-content p {
   color: #666;
   margin: 0;
+  font-size: 14px;
 }
 
 .map-content {
   display: flex;
-  gap: 20px;
+  gap: 0;
   align-items: flex-start;
+  height: calc(100vh - 80px); /* Subtract header height */
 }
 
+/* Main map container */
 .map-container {
   flex: 1;
-  min-height: 500px;
+  height: 100%;
+  position: relative;
+  background: #f0f0f0; /* Temporary background to debug visibility */
+  min-height: 400px; /* Ensure minimum height */
+}
+
+/* Ensure Leaflet map renders correctly */
+.map-container .leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  z-index: 1;
+}
+
+/* Layer control styling */
+.map-container .leaflet-control-layers {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(5px);
   border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.map-container .leaflet-control-layers-toggle {
+  background-color: #1a73e8;
+  color: white;
+  border-radius: 4px;
+}
+
+.map-container .leaflet-control-layers-toggle:hover {
+  background-color: #1557b0;
 }
 
 .loading, .error, .no-data {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 500px;
+  height: 100%;
+  min-height: 400px;
   background: #f8f9fa;
   border-radius: 8px;
   font-size: 16px;
@@ -92,13 +158,13 @@
 /* Evidence Sidebar Styles */
 .evidence-sidebar {
   position: relative;
-  width: 300px;
+  width: 350px;
   background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-left: 1px solid #e0e0e0;
+  border-radius: 0;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  max-height: 500px;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  height: 100%;
   overflow-y: auto;
 }
 
@@ -187,11 +253,17 @@
   
   .evidence-sidebar {
     width: 100%;
-    max-height: 300px;
+    height: 40vh;
+    border-left: none;
+    border-top: 1px solid #e0e0e0;
+  }
+  
+  .map-container {
+    height: 60vh;
   }
   
   .evidence-map-container {
-    padding: 10px;
+    padding: 0;
   }
 }
 

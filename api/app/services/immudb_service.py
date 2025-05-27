@@ -5,7 +5,13 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 
 from immudb import ImmudbClient
-from immudb.exceptions import ImmudbError
+try:
+    from immudb.exceptions import ImmudbError
+except ImportError:
+    # For older/newer versions, create a custom exception class
+    class ImmudbError(Exception):
+        """Custom ImmudbError when library doesn't provide one"""
+        pass
 
 logger = logging.getLogger(__name__)
 

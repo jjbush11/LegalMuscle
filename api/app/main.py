@@ -462,32 +462,37 @@ async def upload_evidence(file: UploadFile = File(...)):
 async def audit_status(db: Session = Depends(get_db)):
     """Get audit and immudb status"""
     try:
-        # Check immudb connectivity
-        client = immudb_service._get_client()
+        # Get database connection status
+        db_status = "connected"
+        try:
+            db.execute("SELECT 1")
+        except Exception as e:
+            db_status = f"error: {str(e)}"
         
-        # Get total evidence objects
-        total_objects = db.query(EvidenceObject).count()
+        # Get immudb connection status
+        immudb_status = "connected"
+        try:
+            # Test immudb connection
+            await immudb_service.health_check()
+        except Exception as e:
+            immudb_status = f"error: {str(e)}"
         
-        # Get objects with immudb transactions
-        with_immudb = db.query(EvidenceObject).filter(
-            EvidenceObject.immudb_tx_id.isnot(None)
-        ).count()
+        # Get evidence count
+        evidence_count = db.query(EvidenceObject).count()
         
         return {
             "status": "ok",
-            "immudb_connected": True,
-            "total_evidence_objects": total_objects,
-            "objects_with_immudb_tx": with_immudb,
-            "coverage_percentage": round((with_immudb / total_objects * 100) if total_objects > 0 else 0, 2)
+            "database": db_status,
+            "immudb": immudb_status,
+            "evidence_count": evidence_count,
+            "timestamp": datetime.utcnow().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Audit status check failed: {e}")
         return {
             "status": "error",
-            "immudb_connected": False,
             "error": str(e)
-        }_payload
+        }
 
 
 @app.get("/api/v1/files/{object_name:path}") # Use path converter for object_name
@@ -691,7 +696,8 @@ async def upload_evidence_refined(file: UploadFile = File(...), db: Session = De
                         "upload-id": upload_id,
                         "original-filename": file.filename
                     }
-                )            minio_upload_results.append({
+                )            
+                minio_upload_results.append({
                 "minio_object_name": minio_object_name,
                 "original_filename": file.filename,
                 "version_id": result.version_id, "etag": result.etag,

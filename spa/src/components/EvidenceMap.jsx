@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -13,7 +13,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const EvidenceMap = ({ onEvidenceSelect }) => {
+const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
   const [evidenceData, setEvidenceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,49 +62,130 @@ const EvidenceMap = ({ onEvidenceSelect }) => {
     if (mimeType.startsWith('audio/')) return '🎵';
     return '📄';
   };
-
   if (loading) {
     return (
-      <div className="map-container">
-        <div className="loading">Loading evidence map...</div>
+      <div className="evidence-map-container">      <div className="map-header">
+        <button className="back-button" onClick={onBack}>
+          ← Back to Upload
+        </button>
+        <div className="header-content">
+          <h2>Evidence Locations</h2>
+          <p>Loading evidence data...</p>
+        </div>
+      </div>
+        <div className="map-content">
+          <div className="map-container">
+            <div className="loading">Loading evidence map...</div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="map-container">
-        <div className="error">{error}</div>
+      <div className="evidence-map-container">      <div className="map-header">
+        <button className="back-button" onClick={onBack}>
+          ← Back to Upload
+        </button>
+        <div className="header-content">
+          <h2>Evidence Locations</h2>
+          <p>Error loading data</p>
+        </div>
+      </div>
+        <div className="map-content">
+          <div className="map-container">
+            <div className="error">{error}</div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!evidenceData || !evidenceData.features || evidenceData.features.length === 0) {
     return (
-      <div className="map-container">
-        <div className="no-data">No evidence with location data found.</div>
+      <div className="evidence-map-container">      <div className="map-header">
+        <button className="back-button" onClick={onBack}>
+          ← Back to Upload
+        </button>
+        <div className="header-content">
+          <h2>Evidence Locations</h2>
+          <p>No location data available</p>
+        </div>
+      </div>
+        <div className="map-content">
+          <div className="map-container">
+            <div className="no-data">No evidence with location data found.</div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="evidence-map-container">
+  return (    <div className="evidence-map-container">
       <div className="map-header">
-        <h2>Evidence Locations</h2>
-        <p>{evidenceData.features.length} evidence items with GPS coordinates</p>
+        <button className="back-button" onClick={onBack}>
+          ← Back to Upload
+        </button>
+        <div className="header-content">
+          <h2>Evidence Locations</h2>
+          <p>{evidenceData.features.length} evidence items with GPS coordinates</p>
+        </div>
       </div>
       
-      <div className="map-content">
-        <div className="map-container">
+      <div className="map-content">        <div className="map-container">
           <MapContainer
             center={[40.7128, -74.0060]} // Default to NYC
             zoom={10}
-            style={{ height: '500px', width: '100%' }}
+            style={{ height: '100%', width: '100%' }}
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <LayersControl position="topright">
+              {/* Base Map Layers */}
+              <LayersControl.BaseLayer checked name="OpenStreetMap">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+              </LayersControl.BaseLayer>
+              
+              <LayersControl.BaseLayer name="Satellite (Esri)">
+                <TileLayer
+                  attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                />
+              </LayersControl.BaseLayer>
+              
+              <LayersControl.BaseLayer name="Terrain">
+                <TileLayer
+                  attribution='Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png"
+                  subdomains="abcd"
+                />
+              </LayersControl.BaseLayer>
+              
+              <LayersControl.BaseLayer name="Dark Mode">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                  subdomains="abcd"
+                />
+              </LayersControl.BaseLayer>
+              
+              <LayersControl.BaseLayer name="Watercolor">
+                <TileLayer
+                  attribution='Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://stamen-tiles-{s}.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg"
+                  subdomains="abcd"
+                />
+              </LayersControl.BaseLayer>
+              
+              <LayersControl.BaseLayer name="Topo Map">
+                <TileLayer
+                  attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community'
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
+                />
+              </LayersControl.BaseLayer>
+            </LayersControl>
             
             {evidenceData.features.map((feature, index) => {
               if (!feature.geometry || !feature.geometry.coordinates) return null;
