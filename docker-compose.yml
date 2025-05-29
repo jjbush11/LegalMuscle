@@ -46,6 +46,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
+      - ./ops:/ops
     command: server /data --console-address ":9001"
     restart: unless-stopped
 
