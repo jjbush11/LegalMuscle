@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-lea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
+import DossierGenerator from './DossierGenerator';
 import './EvidenceMap.css';
 
 // Fix for default markers in React Leaflet
@@ -18,6 +19,8 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedEvidence, setSelectedEvidence] = useState(null);
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState([]);
+  const [showDossierGenerator, setShowDossierGenerator] = useState(false);
 
   useEffect(() => {
     const fetchEvidenceData = async () => {
@@ -36,12 +39,37 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
 
     fetchEvidenceData();
   }, []);
-
   const handleMarkerClick = (evidence) => {
     setSelectedEvidence(evidence);
     if (onEvidenceSelect) {
       onEvidenceSelect(evidence);
     }
+  };
+
+  const toggleEvidenceSelection = (evidenceId) => {
+    setSelectedEvidenceIds(prev => 
+      prev.includes(evidenceId) 
+        ? prev.filter(id => id !== evidenceId)
+        : [...prev, evidenceId]
+    );
+  };
+
+  const selectAllEvidence = () => {
+    if (!evidenceData?.features) return;
+    const allIds = evidenceData.features.map(f => f.properties.id);
+    setSelectedEvidenceIds(allIds);
+  };
+
+  const clearAllSelection = () => {
+    setSelectedEvidenceIds([]);
+  };
+
+  const openDossierGenerator = () => {
+    setShowDossierGenerator(true);
+  };
+
+  const closeDossierGenerator = () => {
+    setShowDossierGenerator(false);
   };
 
   const formatDate = (dateString) => {
@@ -61,18 +89,18 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
     if (mimeType.startsWith('video/')) return '🎥';
     if (mimeType.startsWith('audio/')) return '🎵';
     return '📄';
-  };
-  if (loading) {
+  };  if (loading) {
     return (
-      <div className="evidence-map-container">      <div className="map-header">
-        <button className="back-button" onClick={onBack}>
-          ← Back to Upload
-        </button>
-        <div className="header-content">
-          <h2>Evidence Locations</h2>
-          <p>Loading evidence data...</p>
+      <div className="evidence-map-container">
+        <div className="map-header">
+          <button className="back-button" onClick={onBack}>
+            ← Back to Upload
+          </button>
+          <div className="header-content">
+            <h2>Evidence Locations</h2>
+            <p>Loading evidence data...</p>
+          </div>
         </div>
-      </div>
         <div className="map-content">
           <div className="map-container">
             <div className="loading">Loading evidence map...</div>
@@ -81,18 +109,18 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
       </div>
     );
   }
-
   if (error) {
     return (
-      <div className="evidence-map-container">      <div className="map-header">
-        <button className="back-button" onClick={onBack}>
-          ← Back to Upload
-        </button>
-        <div className="header-content">
-          <h2>Evidence Locations</h2>
-          <p>Error loading data</p>
+      <div className="evidence-map-container">
+        <div className="map-header">
+          <button className="back-button" onClick={onBack}>
+            ← Back to Upload
+          </button>
+          <div className="header-content">
+            <h2>Evidence Locations</h2>
+            <p>Error loading data</p>
+          </div>
         </div>
-      </div>
         <div className="map-content">
           <div className="map-container">
             <div className="error">{error}</div>
@@ -101,18 +129,18 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
       </div>
     );
   }
-
   if (!evidenceData || !evidenceData.features || evidenceData.features.length === 0) {
     return (
-      <div className="evidence-map-container">      <div className="map-header">
-        <button className="back-button" onClick={onBack}>
-          ← Back to Upload
-        </button>
-        <div className="header-content">
-          <h2>Evidence Locations</h2>
-          <p>No location data available</p>
+      <div className="evidence-map-container">
+        <div className="map-header">
+          <button className="back-button" onClick={onBack}>
+            ← Back to Upload
+          </button>
+          <div className="header-content">
+            <h2>Evidence Locations</h2>
+            <p>No location data available</p>
+          </div>
         </div>
-      </div>
         <div className="map-content">
           <div className="map-container">
             <div className="no-data">No evidence with location data found.</div>
@@ -121,19 +149,56 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
       </div>
     );
   }
-
-  return (    <div className="evidence-map-container">
+  return (
+    <div className="evidence-map-container">
       <div className="map-header">
-        <button className="back-button" onClick={onBack}>
-          ← Back to Upload
-        </button>
+        <div className="navigation-section">
+          <button className="back-button" onClick={onBack}>
+            ← Back to Upload
+          </button>
+          <div className="breadcrumb">
+            <span className="breadcrumb-item">Evidence MVP</span>
+            <span className="breadcrumb-separator">›</span>
+            <span className="breadcrumb-item current">Evidence Map</span>
+          </div>
+        </div>
         <div className="header-content">
           <h2>Evidence Locations</h2>
           <p>{evidenceData.features.length} evidence items with GPS coordinates</p>
         </div>
+        <div className="header-actions">
+          <div className="selection-info">
+            {selectedEvidenceIds.length > 0 && (
+              <span className="selection-count">
+                {selectedEvidenceIds.length} selected
+              </span>
+            )}
+          </div>
+          <div className="action-buttons">
+            {evidenceData.features.length > 0 && (
+              <>
+                <button 
+                  className="select-all-btn"
+                  onClick={selectedEvidenceIds.length === evidenceData.features.length ? clearAllSelection : selectAllEvidence}
+                >
+                  {selectedEvidenceIds.length === evidenceData.features.length ? 'Clear All' : 'Select All'}
+                </button>
+                {selectedEvidenceIds.length > 0 && (
+                  <button 
+                    className="generate-dossier-btn"
+                    onClick={openDossierGenerator}
+                  >
+                    📋 Generate Dossier ({selectedEvidenceIds.length})
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
       
-      <div className="map-content">        <div className="map-container">
+      <div className="map-content">
+        <div className="map-container">
           <MapContainer
             center={[40.7128, -74.0060]} // Default to NYC
             zoom={10}
@@ -200,12 +265,21 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                   eventHandlers={{
                     click: () => handleMarkerClick(feature)
                   }}
-                >
-                  <Popup>
+                >                  <Popup>
                     <div className="evidence-popup">
-                      <h4>
-                        {getFileTypeIcon(props.mime_type)} {props.filename}
-                      </h4>
+                      <div className="popup-header">
+                        <h4>
+                          {getFileTypeIcon(props.mime_type)} {props.filename}
+                        </h4>
+                        <label className="selection-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={selectedEvidenceIds.includes(props.id)}
+                            onChange={() => toggleEvidenceSelection(props.id)}
+                          />
+                          <span className="checkmark"></span>
+                        </label>
+                      </div>
                       <p><strong>SHA256:</strong> {props.sha256?.substring(0, 16)}...</p>
                       <p><strong>Captured:</strong> {formatDate(props.captured_at)}</p>
                       <p><strong>Size:</strong> {formatFileSize(props.size_bytes)}</p>
@@ -225,16 +299,28 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
             })}
           </MapContainer>
         </div>
-        
-        {selectedEvidence && (
+          {selectedEvidence && (
           <div className="evidence-sidebar">
-            <h3>Evidence Details</h3>
-            <button 
-              className="close-sidebar"
-              onClick={() => setSelectedEvidence(null)}
-            >
-              ×
-            </button>
+            <div className="sidebar-header">
+              <h3>Evidence Details</h3>
+              <div className="sidebar-controls">
+                <label className="selection-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedEvidenceIds.includes(selectedEvidence.properties.id)}
+                    onChange={() => toggleEvidenceSelection(selectedEvidence.properties.id)}
+                  />
+                  <span className="checkmark"></span>
+                  Select for dossier
+                </label>
+                <button 
+                  className="close-sidebar"
+                  onClick={() => setSelectedEvidence(null)}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
             
             <div className="evidence-details">
               <h4>
@@ -289,10 +375,17 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                   <EvidenceThumbnail evidenceFile={selectedEvidence.properties} />
                 </div>
               )}
-            </div>
-          </div>
+            </div>          </div>
         )}
       </div>
+
+      {showDossierGenerator && (
+        <DossierGenerator
+          selectedEvidence={selectedEvidenceIds}
+          evidenceData={evidenceData}
+          onClose={closeDossierGenerator}
+        />
+      )}
     </div>
   );
 };
