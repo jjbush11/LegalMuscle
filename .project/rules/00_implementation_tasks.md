@@ -233,7 +233,7 @@ repo bootstrap to final documentation.
 * [ ] **P11‑T1 User model**
 
   * [ ] Integrate `fastapi-users`; tables `users`, `organisations`, `user_org_link`.
-  * [ ] JWT auth; password reset via email (console backend for dev).
+  * [ ] JWT auth; passwordv reset via email (console backend for dev).
 * [ ] **P11‑T2 Auth guards**
 
   * [ ] Protect `/upload`, `/items`, `/dossier` routes; restrict to org scope.
