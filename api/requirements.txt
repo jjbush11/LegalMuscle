@@ -14,3 +14,4 @@ numpy<2.0.0
 PyYAML==6.0.1 # Added for parsing eyeWitness metadata.yaml
 python-gnupg==0.5.2 # Added for ProofMode GPG verification
 Pillow==10.1.0 # Added for image processing and thumbnail generation
+docx2pdf # Added for PDF conversion in P10-T3

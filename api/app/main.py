@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from uuid import uuid4
+import uuid
 import shutil
 import tempfile
 import zipfile
@@ -10,6 +11,7 @@ import json
 import yaml # For eyeWitness
 import os
 import logging
+import subprocess
 from typing import List, Optional, Dict, Any
 from minio import Minio
 from minio.error import S3Error
@@ -1327,3 +1329,239 @@ async def generate_and_store_thumbnail(
     except Exception as e:
         print(f"Failed to generate thumbnail for {image_path}: {e}")
         return None
+
+# P10 - Dossier Generator
+
+class DossierRequest(BaseModel):
+    ids: List[str]  # List of evidence object IDs
+    case_id: Optional[str] = None
+
+@app.post("/api/v1/dossier")
+async def generate_dossier(
+    request: DossierRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    P10-T2: Generate route - POST /api/v1/dossier with JSON {ids:[...]}
+    Fetch files, build mapsnap, render Docx via docxtpl, save to MinIO dossiers bucket.
+    Respond with presigned download URL.
+    """
+    if not minio_client:
+        raise HTTPException(status_code=500, detail="MinIO client not initialized.")
+    
+    if not request.ids:
+        raise HTTPException(status_code=400, detail="No evidence IDs provided.")
+    
+    try:
+        # Fetch evidence objects and their files
+        evidence_objects = db.query(EvidenceObject).filter(
+            EvidenceObject.id.in_([uuid.UUID(id_str) for id_str in request.ids])
+        ).all()
+        
+        if not evidence_objects:
+            raise HTTPException(status_code=404, detail="No evidence objects found for provided IDs.")
+        
+        # Collect all evidence files with their details
+        evidence_items = []
+        for evidence_obj in evidence_objects:
+            for evidence_file in evidence_obj.files:
+                # Get coordinates if available
+                coordinates = None
+                if evidence_file.geometry:
+                    point = to_shape(evidence_file.geometry)
+                    coordinates = {
+                        "latitude": point.y,
+                        "longitude": point.x
+                    }
+                
+                evidence_items.append({
+                    "filename": evidence_file.filename,
+                    "sha256": evidence_file.sha256,
+                    "captured_at": evidence_file.captured_at.strftime("%Y-%m-%d %H:%M:%S UTC") if evidence_file.captured_at else "Unknown",
+                    "mime_type": evidence_file.mime_type or "Unknown",
+                    "size_bytes": evidence_file.size_bytes or 0,
+                    "coordinates": coordinates,
+                    "object_type": evidence_obj.object_type,
+                    "object_id": str(evidence_obj.id),
+                    "file_id": str(evidence_file.id)
+                })
+        
+        if not evidence_items:
+            raise HTTPException(status_code=404, detail="No evidence files found for provided IDs.")
+        
+        # Prepare template context
+        case_id = request.case_id or f"CASE-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+        context = {
+            "case_id": case_id,
+            "generation_date": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "total_items": len(evidence_items),
+            "evidence_items": evidence_items
+        }
+          # Load template and render document
+        template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates", "dossier_template.docx")
+        if not os.path.exists(template_path):
+            raise HTTPException(status_code=500, detail="Dossier template not found.")
+        
+        # Generate dossier
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Render DOCX
+            output_docx_path = os.path.join(temp_dir, f"dossier_{case_id}.docx")
+            
+            from docxtpl import DocxTemplate
+            doc = DocxTemplate(template_path)
+            doc.render(context)
+            doc.save(output_docx_path)
+            
+            # Store DOCX in MinIO dossiers bucket
+            docx_object_name = f"dossiers/{case_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.docx"
+            
+            with open(output_docx_path, 'rb') as docx_file:
+                docx_size = os.path.getsize(output_docx_path)
+                try:
+                    docx_result = minio_client.put_object(
+                        MINIO_BUCKET,
+                        docx_object_name,
+                        docx_file,
+                        length=docx_size,
+                        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        metadata={
+                            "case_id": case_id,
+                            "evidence_count": str(len(evidence_items)),
+                            "generated_at": datetime.utcnow().isoformat()
+                        }
+                    )
+                except S3Error as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to store dossier DOCX: {e}")
+            
+            # Generate presigned download URL for DOCX
+            try:
+                docx_presigned_url = minio_client.presigned_get_object(
+                    MINIO_BUCKET,
+                    docx_object_name,
+                    expires=timedelta(hours=1)  # Valid for 1 hour
+                )
+            except S3Error as e:
+                raise HTTPException(status_code=500, detail=f"Failed to generate presigned URL for DOCX: {e}")
+            
+            response_data = {
+                "case_id": case_id,
+                "evidence_count": len(evidence_items),
+                "docx": {
+                    "object_name": docx_object_name,
+                    "download_url": docx_presigned_url,
+                    "version_id": docx_result.version_id
+                },
+                "generated_at": datetime.utcnow().isoformat()
+            }
+            
+            # P10-T3: Optional PDF conversion if LibreOffice or python-docx2pdf is available
+            try:
+                # Try to convert DOCX to PDF using python-docx2pdf
+                try:
+                    from docx2pdf import convert
+                    output_pdf_path = os.path.join(temp_dir, f"dossier_{case_id}.pdf")
+                    convert(output_docx_path, output_pdf_path)
+                    
+                    # Store PDF in MinIO
+                    pdf_object_name = f"dossiers/{case_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+                    
+                    with open(output_pdf_path, 'rb') as pdf_file:
+                        pdf_size = os.path.getsize(output_pdf_path)
+                        try:
+                            pdf_result = minio_client.put_object(
+                                MINIO_BUCKET,
+                                pdf_object_name,
+                                pdf_file,
+                                length=pdf_size,
+                                content_type="application/pdf",
+                                metadata={
+                                    "case_id": case_id,
+                                    "evidence_count": str(len(evidence_items)),
+                                    "generated_at": datetime.utcnow().isoformat(),
+                                    "source": "docx2pdf"
+                                }
+                            )
+                            
+                            # Generate presigned download URL for PDF
+                            pdf_presigned_url = minio_client.presigned_get_object(
+                                MINIO_BUCKET,
+                                pdf_object_name,
+                                expires=timedelta(hours=1)
+                            )
+                            
+                            response_data["pdf"] = {
+                                "object_name": pdf_object_name,
+                                "download_url": pdf_presigned_url,
+                                "version_id": pdf_result.version_id,
+                                "conversion_method": "python-docx2pdf"
+                            }
+                            
+                        except S3Error as e:
+                            logger.warning(f"Failed to store PDF in MinIO: {e}")
+                            
+                except ImportError:
+                    # Try LibreOffice if available
+                    if shutil.which("libreoffice"):
+                        try:
+                            output_pdf_path = os.path.join(temp_dir, f"dossier_{case_id}.pdf")
+                            
+                            # Use LibreOffice to convert DOCX to PDF
+                            subprocess.run([
+                                "libreoffice", "--headless", "--convert-to", "pdf",
+                                "--outdir", temp_dir, output_docx_path
+                            ], check=True, capture_output=True)
+                            
+                            # Store PDF in MinIO
+                            pdf_object_name = f"dossiers/{case_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+                            
+                            with open(output_pdf_path, 'rb') as pdf_file:
+                                pdf_size = os.path.getsize(output_pdf_path)
+                                try:
+                                    pdf_result = minio_client.put_object(
+                                        MINIO_BUCKET,
+                                        pdf_object_name,
+                                        pdf_file,
+                                        length=pdf_size,
+                                        content_type="application/pdf",
+                                        metadata={
+                                            "case_id": case_id,
+                                            "evidence_count": str(len(evidence_items)),
+                                            "generated_at": datetime.utcnow().isoformat(),
+                                            "source": "libreoffice"
+                                        }
+                                    )
+                                    
+                                    # Generate presigned download URL for PDF
+                                    pdf_presigned_url = minio_client.presigned_get_object(
+                                        MINIO_BUCKET,
+                                        pdf_object_name,
+                                        expires=timedelta(hours=1)
+                                    )
+                                    
+                                    response_data["pdf"] = {
+                                        "object_name": pdf_object_name,
+                                        "download_url": pdf_presigned_url,
+                                        "version_id": pdf_result.version_id,
+                                        "conversion_method": "libreoffice"
+                                    }
+                                    
+                                except S3Error as e:
+                                    logger.warning(f"Failed to store PDF in MinIO: {e}")
+                                    
+                        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                            logger.warning(f"LibreOffice PDF conversion failed: {e}")
+                    else:
+                        logger.info("Neither python-docx2pdf nor LibreOffice available for PDF conversion")
+                        
+            except Exception as e:
+                logger.warning(f"PDF conversion failed: {e}")
+                # Continue without PDF - DOCX is still available
+            return response_data
+    except ValueError as e:
+        logger.error(f"Invalid UUID in evidence IDs: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid UUID in evidence IDs: {e}")
+    except Exception as e:
+        logger.error(f"Dossier generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Dossier generation failed: {str(e)}")
