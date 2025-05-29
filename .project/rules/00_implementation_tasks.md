@@ -214,17 +214,17 @@ repo bootstrap to final documentation.
 
 ## P10 · Dossier Generator (Day 7‑9)
 
-* [ ] **P10‑T1 Docx template**
+* [X] **P10‑T1 Docx template**
 
-  * [ ] Design `dossier_template.docx` with placeholder fields (`{{case_id}}`, `{% for evidence %}` loop).
-* [ ] **P10‑T2 Generate route**
+  * [X] Design `dossier_template.docx` with placeholder fields (`{{case_id}}`, `{% for evidence %}` loop).
+* [X] **P10‑T2 Generate route**
 
-  * [ ] `POST /api/v1/dossier` with JSON `{ids:[...]}`.
-  * [ ] Fetch files, build mapsnap, render Docx via `docxtpl`, save to MinIO `dossiers` bucket.
-  * [ ] Respond with presigned download URL.
-* [ ] **P10‑T3 Optional PDF**
+  * [X] `POST /api/v1/dossier` with JSON `{ids:[...]}`.
+  * [X] Fetch files, build mapsnap, render Docx via `docxtpl`, save to MinIO `dossiers` bucket.
+  * [X] Respond with presigned download URL.
+* [X] **P10‑T3 Optional PDF**
 
-  * [ ] If LibreOffice present, convert Docx→PDF using `python-docx2pdf`.
+  * [X] If LibreOffice present, convert Docx→PDF using `python-docx2pdf`.
 
 ---
 
