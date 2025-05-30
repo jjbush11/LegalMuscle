@@ -56,7 +56,7 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
 
   const selectAllEvidence = () => {
     if (!evidenceData?.features) return;
-    const allIds = evidenceData.features.map(f => f.properties.id);
+    const allIds = evidenceData.features.map(f => f.properties.object_id);
     setSelectedEvidenceIds(allIds);
   };
 
@@ -274,8 +274,8 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                         <label className="selection-checkbox">
                           <input
                             type="checkbox"
-                            checked={selectedEvidenceIds.includes(props.id)}
-                            onChange={() => toggleEvidenceSelection(props.id)}
+                            checked={selectedEvidenceIds.includes(props.object_id)}
+                            onChange={() => toggleEvidenceSelection(props.object_id)}
                           />
                           <span className="checkmark"></span>
                         </label>
@@ -307,8 +307,8 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                 <label className="selection-checkbox">
                   <input
                     type="checkbox"
-                    checked={selectedEvidenceIds.includes(selectedEvidence.properties.id)}
-                    onChange={() => toggleEvidenceSelection(selectedEvidence.properties.id)}
+                    checked={selectedEvidenceIds.includes(selectedEvidence.properties.object_id)}
+                    onChange={() => toggleEvidenceSelection(selectedEvidence.properties.object_id)}
                   />
                   <span className="checkmark"></span>
                   Select for dossier

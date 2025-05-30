@@ -9,7 +9,7 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
   const [success, setSuccess] = useState(null);
 
   const selectedItems = evidenceData?.features?.filter(feature => 
-    selectedEvidence.includes(feature.properties.id)
+    selectedEvidence.includes(feature.properties.object_id)
   ) || [];
 
   const generateDossier = async () => {
@@ -30,6 +30,12 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
 
       console.log('Generating dossier with payload:', payload);
 
+      console.log('=== DEBUGGING DOSSIER REQUEST ===');
+      console.log('Selected evidence array:', selectedEvidence);
+      console.log('Evidence data features:', evidenceData?.features?.slice(0, 2)); // Show first 2 items
+      console.log('Payload being sent:', payload);
+      console.log('=====================================');
+
       const response = await axios.post('/api/v1/dossier', payload, {
         headers: {
           'Content-Type': 'application/json'
@@ -41,17 +47,17 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
 
       setSuccess({
         message: 'Dossier generated successfully!',
-        docxUrl: result.docx_url,
-        pdfUrl: result.pdf_url,
+        docxUrl: result.docx?.download_url,
+        pdfUrl: result.pdf?.download_url,
         caseId: result.case_id
       });
 
       // Auto-download the files
-      if (result.docx_url) {
-        window.open(result.docx_url, '_blank');
+      if (result.docx?.download_url) {
+        window.open(result.docx.download_url, '_blank');
       }
-      if (result.pdf_url) {
-        setTimeout(() => window.open(result.pdf_url, '_blank'), 500);
+      if (result.pdf?.download_url) {
+        setTimeout(() => window.open(result.pdf.download_url, '_blank'), 500);
       }
 
     } catch (err) {

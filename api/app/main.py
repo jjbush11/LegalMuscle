@@ -173,6 +173,15 @@ try:
         secret_key=MINIO_SECRET_KEY,
         secure=MINIO_USE_SSL
     )
+
+    # Client for generating presigned URLs that work from browser
+    minio_client_external = Minio(
+        f"localhost:{MINIO_PORT}",
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY,
+        secure=MINIO_USE_SSL
+    )
+
     # Check if bucket exists, create if not (though init script should handle this)
     found = minio_client.bucket_exists(MINIO_BUCKET)
     if not found:
@@ -183,6 +192,7 @@ try:
 except Exception as e:
     print(f"Error initializing MinIO client: {e}")
     minio_client = None # Set to None if initialization fails
+    minio_client_external = None
 
 # Add a testing mode configuration
 TESTING_MODE = os.getenv("TESTING_MODE", "False").lower() == "true"
@@ -500,12 +510,12 @@ async def audit_status(db: Session = Depends(get_db)):
 @app.get("/api/v1/files/{object_name:path}") # Use path converter for object_name
 async def get_file_presigned_url(object_name: str):
     """P6-T3: Implement GET /api/v1/files/{object_name} returning presigned GET link valid 15 min."""
-    if not minio_client:
+    if not minio_client_external:
         raise HTTPException(status_code=500, detail="MinIO client not initialized. Check server logs.")
 
     try:
         # Generate a presigned URL for GET request, valid for 15 minutes (900 seconds)
-        presigned_url = minio_client.presigned_get_object(
+        presigned_url = minio_client_external.presigned_get_object(
             MINIO_BUCKET,
             object_name, # This should be the full MinIO object name, e.g., uploads/uuid/filename.jpg
             expires=timedelta(minutes=15)
@@ -1440,6 +1450,13 @@ async def generate_dossier(
                     docx_object_name,
                     expires=timedelta(hours=1)  # Valid for 1 hour
                 )
+
+                # Replace internal hostname with external hostname for browser access
+                docx_presigned_url = docx_presigned_url.replace(
+                    f"http://minio:{MINIO_PORT}",
+                    f"http://localhost:{MINIO_PORT}"
+                )
+                
             except S3Error as e:
                 raise HTTPException(status_code=500, detail=f"Failed to generate presigned URL for DOCX: {e}")
             
