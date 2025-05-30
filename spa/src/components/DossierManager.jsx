@@ -41,7 +41,7 @@ const DossierManager = ({ onBack }) => {
 
   const selectAllEvidence = () => {
     if (!filteredEvidence) return;
-    const allIds = filteredEvidence.map(f => f.properties.id);
+    const allIds = filteredEvidence.map(f => f.properties.object_id);
     setSelectedEvidenceIds(allIds);
   };
 
@@ -220,13 +220,13 @@ const DossierManager = ({ onBack }) => {
           <div className="evidence-grid">
             {sortedEvidence.map((feature, index) => {
               const props = feature.properties;
-              const isSelected = selectedEvidenceIds.includes(props.id);
+              const isSelected = selectedEvidenceIds.includes(props.object_id);
               
               return (
                 <div 
                   key={`${props.id}-${index}`}
                   className={`evidence-card ${isSelected ? 'selected' : ''}`}
-                  onClick={() => toggleEvidenceSelection(props.id)}
+                  onClick={() => toggleEvidenceSelection(props.object_id)}
                 >
                   <div className="evidence-card-header">
                     <div className="evidence-icon">
@@ -236,7 +236,7 @@ const DossierManager = ({ onBack }) => {
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => toggleEvidenceSelection(props.id)}
+                        onChange={() => toggleEvidenceSelection(props.object_id)}
                         onClick={(e) => e.stopPropagation()}
                       />
                     </div>

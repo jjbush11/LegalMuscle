@@ -18,6 +18,8 @@ services:
       - IMMUDB_PORT=3322
       - GPG_SKIP_VERIFICATION=${GPG_SKIP_VERIFICATION}
       - TESTING_MODE=${TESTING_MODE}
+    volumes:
+      - ./api/templates:/app/templates
     depends_on:
       - db
       - minio
