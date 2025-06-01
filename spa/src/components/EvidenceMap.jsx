@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -15,6 +16,7 @@ L.Icon.Default.mergeOptions({
 });
 
 const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
+  const { t } = useTranslation();
   const [evidenceData, setEvidenceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -71,16 +73,15 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
   const closeDossierGenerator = () => {
     setShowDossierGenerator(false);
   };
-
   const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
+    if (!dateString) return t('common.unknown');
     return new Date(dateString).toLocaleString();
   };
 
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown';
+    if (!bytes) return t('common.unknown');
     const mb = bytes / (1024 * 1024);
-    return mb > 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+    return mb > 1 ? t('format.mb', { size: mb.toFixed(1) }) : t('format.kb', { size: (bytes / 1024).toFixed(1) });
   };
 
   const getFileTypeIcon = (mimeType) => {
@@ -94,31 +95,30 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
       <div className="evidence-map-container">
         <div className="map-header">
           <button className="back-button" onClick={onBack}>
-            ← Back to Upload
+            ← {t('nav.backToUpload')}
           </button>
           <div className="header-content">
-            <h2>Evidence Locations</h2>
-            <p>Loading evidence data...</p>
+            <h2>{t('map.title')}</h2>
+            <p>{t('map.loading')}</p>
           </div>
         </div>
         <div className="map-content">
           <div className="map-container">
-            <div className="loading">Loading evidence map...</div>
+            <div className="loading">{t('map.loadingMap')}</div>
           </div>
         </div>
       </div>
     );
-  }
-  if (error) {
+  }  if (error) {
     return (
       <div className="evidence-map-container">
         <div className="map-header">
           <button className="back-button" onClick={onBack}>
-            ← Back to Upload
+            ← {t('nav.backToUpload')}
           </button>
           <div className="header-content">
-            <h2>Evidence Locations</h2>
-            <p>Error loading data</p>
+            <h2>{t('map.title')}</h2>
+            <p>{t('map.error')}</p>
           </div>
         </div>
         <div className="map-content">
@@ -128,49 +128,47 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
         </div>
       </div>
     );
-  }
-  if (!evidenceData || !evidenceData.features || evidenceData.features.length === 0) {
+  }  if (!evidenceData || !evidenceData.features || evidenceData.features.length === 0) {
     return (
       <div className="evidence-map-container">
         <div className="map-header">
           <button className="back-button" onClick={onBack}>
-            ← Back to Upload
+            ← {t('nav.backToUpload')}
           </button>
           <div className="header-content">
-            <h2>Evidence Locations</h2>
-            <p>No location data available</p>
+            <h2>{t('map.title')}</h2>
+            <p>{t('map.noData')}</p>
           </div>
         </div>
         <div className="map-content">
           <div className="map-container">
-            <div className="no-data">No evidence with location data found.</div>
-          </div>
-        </div>
+            <div className="no-data">{t('map.noEvidence')}</div>
+          </div>        </div>
       </div>
     );
   }
+
   return (
-    <div className="evidence-map-container">
-      <div className="map-header">
+    <div className="evidence-map-container"><div className="map-header">
         <div className="navigation-section">
           <button className="back-button" onClick={onBack}>
-            ← Back to Upload
+            ← {t('nav.backToUpload')}
           </button>
           <div className="breadcrumb">
-            <span className="breadcrumb-item">Evidence MVP</span>
+            <span className="breadcrumb-item">{t('app.title')}</span>
             <span className="breadcrumb-separator">›</span>
-            <span className="breadcrumb-item current">Evidence Map</span>
+            <span className="breadcrumb-item current">{t('map.title')}</span>
           </div>
         </div>
         <div className="header-content">
-          <h2>Evidence Locations</h2>
-          <p>{evidenceData.features.length} evidence items with GPS coordinates</p>
+          <h2>{t('map.title')}</h2>
+          <p>{t('map.itemsCount', { count: evidenceData.features.length })}</p>
         </div>
         <div className="header-actions">
           <div className="selection-info">
             {selectedEvidenceIds.length > 0 && (
               <span className="selection-count">
-                {selectedEvidenceIds.length} selected
+                {t('map.selected', { count: selectedEvidenceIds.length })}
               </span>
             )}
           </div>
@@ -181,14 +179,14 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                   className="select-all-btn"
                   onClick={selectedEvidenceIds.length === evidenceData.features.length ? clearAllSelection : selectAllEvidence}
                 >
-                  {selectedEvidenceIds.length === evidenceData.features.length ? 'Clear All' : 'Select All'}
+                  {selectedEvidenceIds.length === evidenceData.features.length ? t('map.clearSelection') : t('map.selectAll')}
                 </button>
                 {selectedEvidenceIds.length > 0 && (
                   <button 
                     className="generate-dossier-btn"
                     onClick={openDossierGenerator}
                   >
-                    📋 Generate Dossier ({selectedEvidenceIds.length})
+                    📋 {t('map.generateDossier')} ({selectedEvidenceIds.length})
                   </button>
                 )}
               </>
@@ -300,18 +298,16 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
           </MapContainer>
         </div>
           {selectedEvidence && (
-          <div className="evidence-sidebar">
-            <div className="sidebar-header">
-              <h3>Evidence Details</h3>
+          <div className="evidence-sidebar">            <div className="sidebar-header">
+              <h3>{t('evidence.details')}</h3>
               <div className="sidebar-controls">
                 <label className="selection-checkbox">
                   <input
                     type="checkbox"
                     checked={selectedEvidenceIds.includes(selectedEvidence.properties.object_id)}
                     onChange={() => toggleEvidenceSelection(selectedEvidence.properties.object_id)}
-                  />
-                  <span className="checkmark"></span>
-                  Select for dossier
+                  />                  <span className="checkmark"></span>
+                  {t('evidence.selectForDossier')}
                 </label>
                 <button 
                   className="close-sidebar"
@@ -327,38 +323,37 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
                 {getFileTypeIcon(selectedEvidence.properties.mime_type)} 
                 {selectedEvidence.properties.filename}
               </h4>
-              
-              <div className="detail-group">
-                <label>SHA256 Hash:</label>
+                <div className="detail-group">
+                <label>{t('evidence.sha256')}</label>
                 <span className="hash-value">{selectedEvidence.properties.sha256}</span>
               </div>
               
               <div className="detail-group">
-                <label>Captured Date:</label>
+                <label>{t('evidence.capturedDate')}</label>
                 <span>{formatDate(selectedEvidence.properties.captured_at)}</span>
               </div>
               
               <div className="detail-group">
-                <label>File Size:</label>
+                <label>{t('evidence.fileSize')}</label>
                 <span>{formatFileSize(selectedEvidence.properties.size_bytes)}</span>
               </div>
               
               {selectedEvidence.properties.mime_type && (
                 <div className="detail-group">
-                  <label>MIME Type:</label>
+                  <label>{t('evidence.mimeType')}</label>
                   <span>{selectedEvidence.properties.mime_type}</span>
                 </div>
               )}
               
               {selectedEvidence.properties.object_type && (
                 <div className="detail-group">
-                  <label>Object Type:</label>
+                  <label>{t('evidence.objectType')}</label>
                   <span>{selectedEvidence.properties.object_type}</span>
                 </div>
               )}
               
               <div className="detail-group">
-                <label>Coordinates:</label>
+                <label>{t('evidence.coordinates')}</label>
                 <span>
                   {selectedEvidence.geometry.coordinates[1].toFixed(6)}, 
                   {selectedEvidence.geometry.coordinates[0].toFixed(6)}
@@ -366,7 +361,7 @@ const EvidenceMap = ({ onEvidenceSelect, onBack }) => {
               </div>
               
               <div className="detail-group">
-                <label>Created:</label>
+                <label>{t('evidence.created')}</label>
                 <span>{formatDate(selectedEvidence.properties.created_at)}</span>
               </div>
               

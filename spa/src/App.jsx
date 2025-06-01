@@ -1,37 +1,42 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import FileUpload from './components/FileUpload'
 import EvidenceMap from './components/EvidenceMap'
 import DossierManager from './components/DossierManager'
+import LanguageToggle from './components/LanguageToggle'
 import './App.css'
 
 function App() {
   const [currentView, setCurrentView] = useState('upload')
+  const { t } = useTranslation()
 
   return (
     <div className="app-container">
+      <LanguageToggle />
+      
       {currentView === 'upload' && (
         <header>
-          <h1>Evidence MVP</h1>
-          <p>Secure, tamper-evident evidence collection system</p>
+          <h1>{t('app.title')}</h1>
+          <p>{t('app.subtitle')}</p>
           
           <nav className="main-navigation">
             <button 
               className={`nav-button ${currentView === 'upload' ? 'active' : ''}`}
               onClick={() => setCurrentView('upload')}
             >
-              📤 Upload Evidence
+              📤 {t('nav.upload')}
             </button>
             <button 
               className={`nav-button ${currentView === 'map' ? 'active' : ''}`}
               onClick={() => setCurrentView('map')}
             >
-              🗺️ Evidence Map
+              🗺️ {t('nav.map')}
             </button>
             <button 
               className={`nav-button ${currentView === 'dossier' ? 'active' : ''}`}
               onClick={() => setCurrentView('dossier')}
             >
-              📋 Generate Dossier
+              📋 {t('nav.dossier')}
             </button>
           </nav>
         </header>
@@ -49,7 +54,7 @@ function App() {
       
       {currentView === 'upload' && (
         <footer>
-          <p>© {new Date().getFullYear()} Evidence MVP Project</p>
+          <p>© {new Date().getFullYear()} {t('app.footer')}</p>
         </footer>
       )}
     </div>
