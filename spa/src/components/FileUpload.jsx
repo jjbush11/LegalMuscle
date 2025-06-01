@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 
 const FileUpload = () => {
+  const { t } = useTranslation();
   const [selectedFile, setSelectedFile] = useState(null); // Changed from selectedFiles to selectedFile
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
@@ -16,25 +18,22 @@ const FileUpload = () => {
     }
     setMessage('');
     setUploadResults(null);
-  };
-  const handleSubmit = async (event) => {
+  };  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!selectedFile) { // Changed condition
-      setMessage(`Please select a ${uploadType === 'proofmode' ? 'ProofMode ZIP' : 'file'} to upload.`);
+      setMessage(t('upload.selectFile', { type: uploadType === 'proofmode' ? 'ProofMode ZIP' : t('common.file') }));
       return;
-    }
-
-    // Validate file type based on upload type
+    }    // Validate file type based on upload type
     if (uploadType === 'proofmode') {
       const allowedZipTypes = ['application/zip', 'application/x-zip-compressed', 'application/x-zip'];
       if (!allowedZipTypes.includes(selectedFile.type) && !selectedFile.name.toLowerCase().endsWith('.zip')) {
-        setMessage('ProofMode uploads must be ZIP files.');
+        setMessage(t('upload.zipRequired'));
         return;
       }
     }
 
     setUploading(true);
-    setMessage(`Uploading ${uploadType === 'proofmode' ? 'ProofMode ZIP' : 'file'}...`);
+    setMessage(t('upload.uploading'));
 
     try {
       const formData = new FormData();
@@ -49,12 +48,11 @@ const FileUpload = () => {
         },
       });
       
-      setUploadResults(response.data);
-      // Display more detailed success message from backend if available
+      setUploadResults(response.data);      // Display more detailed success message from backend if available
       if (response.data && response.data.message) {
         setMessage(response.data.message);
       } else {
-        setMessage('Upload successful!');
+        setMessage(t('upload.success'));
       }
       // Optionally display processed files info
       if (response.data && response.data.processed_files) {
@@ -63,10 +61,9 @@ const FileUpload = () => {
 
     } catch (error) {
       console.log('Test');
-      console.error('Upload failed:', error);
-      if (error.response && error.response.data) {
+      console.error('Upload failed:', error);      if (error.response && error.response.data) {
         // Display detailed error from backend
-        let errorDetail = "Upload failed.";
+        let errorDetail = t('upload.uploadFailed');
         if (typeof error.response.data.detail === 'string') {
           errorDetail = error.response.data.detail;
         } else if (Array.isArray(error.response.data.detail)) {
@@ -75,20 +72,19 @@ const FileUpload = () => {
         }
         
         if (error.response.data.errors) {
-            errorDetail += " Errors: " + error.response.data.errors.join(", ");
+            errorDetail += " " + t('upload.errors', { errors: error.response.data.errors.join(", ") });
         }
         setMessage(errorDetail);
       } else {
-        setMessage(`Upload failed: ${error.message}`);
+        setMessage(t('upload.uploadFailedWith', { message: error.message }));
       }
       setUploadResults(null); // Clear previous results on error
     } finally {
       setUploading(false);
     }
-  };
-  return (
+  };  return (
     <div className="file-upload">
-      <h2>Upload Evidence Package</h2>
+      <h2>{t('upload.title')}</h2>
       
       {/* Upload Type Selection */}
       <div className="upload-type-selection" style={{ marginBottom: '20px' }}>
@@ -100,7 +96,7 @@ const FileUpload = () => {
             onChange={(e) => setUploadType(e.target.value)}
             disabled={uploading}
           />
-          General Upload (ZIP/Images)
+          {t('upload.type.general')}
         </label>
         <label>
           <input
@@ -110,14 +106,14 @@ const FileUpload = () => {
             onChange={(e) => setUploadType(e.target.value)}
             disabled={uploading}
           />
-          ProofMode ZIP (with GPG verification)
+          {t('upload.type.proofmode')}
         </label>
       </div>
       
       <p>
         {uploadType === 'proofmode' 
-          ? 'Select a ProofMode ZIP file with GPG signatures for forensic verification.'
-          : 'Select a ZIP archive with manifest or individual media files.'
+          ? t('upload.description.proofmode')
+          : t('upload.description.general')
         }
       </p>
       
@@ -127,11 +123,10 @@ const FileUpload = () => {
             onChange={handleFileChange}
             disabled={uploading}
             accept={uploadType === 'proofmode' ? '.zip,application/zip' : '.zip,application/zip,image/*,video/*'}
-          />
-          <div className="selected-files">
+          />          <div className="selected-files">
             {selectedFile && ( // Changed condition
               <div>
-                Selected file:
+                {t('upload.selectedFile')}
                 <ul>
                   <li>
                     {selectedFile.name} ({Math.round(selectedFile.size / 1024)} KB)
@@ -147,27 +142,26 @@ const FileUpload = () => {
           disabled={uploading || !selectedFile} // Changed condition
           className="upload-button"
         >
-          {uploading ? 'Uploading...' : `Upload ${uploadType === 'proofmode' ? 'ProofMode ZIP' : 'File'}`}
+          {uploading ? t('upload.uploading') : t('upload.button', { type: uploadType === 'proofmode' ? 'ProofMode ZIP' : t('common.file') })}
         </button>
       </form>
 
-      {message && <div className={`message ${uploadResults && !uploading && !message.toLowerCase().includes("failed") ? 'message-success' : message.toLowerCase().includes("failed") ? 'message-error' : ''}`}>{message}</div>}
-        {uploadResults && !message.toLowerCase().includes("failed") && ( // Conditionally render results
+      {message && <div className={`message ${uploadResults && !uploading && !message.toLowerCase().includes("failed") ? 'message-success' : message.toLowerCase().includes("failed") ? 'message-error' : ''}`}>{message}</div>}        {uploadResults && !message.toLowerCase().includes("failed") && ( // Conditionally render results
         <div className="upload-results">
-          <h3>Upload Confirmation</h3>
-          <p>ID: {uploadResults.id}</p>
-          <p>Original Filename: {uploadResults.original_input_filename || uploadResults.original_filename}</p>
+          <h3>{t('results.title')}</h3>
+          <p>{t('results.id')} {uploadResults.id}</p>
+          <p>{t('results.originalFilename')} {uploadResults.original_input_filename || uploadResults.original_filename}</p>
           
           {/* ProofMode specific results */}
           {uploadType === 'proofmode' && uploadResults.bundle && (
             <div>
-              <h4>ProofMode Bundle:</h4>
-              <p>Bundle SHA256: {uploadResults.bundle.sha256}</p>
-              <p>Stored as: {uploadResults.bundle.object_name}</p>
+              <h4>{t('results.proofmodeBundle')}</h4>
+              <p>{t('results.bundleSha256')} {uploadResults.bundle.sha256}</p>
+              <p>{t('results.storedAs')} {uploadResults.bundle.object_name}</p>
               
               {uploadResults.media_files && uploadResults.media_files.length > 0 && (
                 <div>
-                  <h4>Media Files:</h4>
+                  <h4>{t('results.mediaFiles')}</h4>
                   <ul>
                     {uploadResults.media_files.map((f, idx) => (
                       <li key={idx}>
@@ -182,7 +176,7 @@ const FileUpload = () => {
               
               {uploadResults.thumbnails && uploadResults.thumbnails.length > 0 && (
                 <div>
-                  <h4>Generated Thumbnails:</h4>
+                  <h4>{t('results.generatedThumbnails')}</h4>
                   <ul>
                     {uploadResults.thumbnails.map((t, idx) => (
                       <li key={idx}>
@@ -195,8 +189,8 @@ const FileUpload = () => {
               
               {uploadResults.signature_verification && (
                 <div>
-                  <h4>Signature Verification:</h4>
-                  <p>Status: {uploadResults.signature_verification.valid ? '✅ Valid' : '❌ Invalid'}</p>
+                  <h4>{t('results.signatureVerification')}</h4>
+                  <p>{t('results.status')} {uploadResults.signature_verification.valid ? t('results.valid') : t('results.invalid')}</p>
                   {uploadResults.signature_verification.verifications && (
                     <ul>
                       {uploadResults.signature_verification.verifications.map((v, idx) => (
@@ -214,7 +208,7 @@ const FileUpload = () => {
           {/* General upload results */}
           {uploadType === 'general' && uploadResults.processed_files && uploadResults.processed_files.length > 0 && (
             <div>
-              <h4>Validated Files:</h4>
+              <h4>{t('results.validatedFiles')}</h4>
               <ul>
                 {uploadResults.processed_files.map(f => (
                   <li key={f.filename}>{f.filename} (SHA256: {f.sha256.substring(0, 16)}...)</li>

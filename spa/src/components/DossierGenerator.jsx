@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import './DossierGenerator.css';
 
 const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
+  const { t } = useTranslation();
   const [caseId, setCaseId] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -11,10 +13,9 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
   const selectedItems = evidenceData?.features?.filter(feature => 
     selectedEvidence.includes(feature.properties.object_id)
   ) || [];
-
   const generateDossier = async () => {
     if (selectedEvidence.length === 0) {
-      setError('Please select at least one evidence item');
+      setError(t('generator.noEvidence'));
       return;
     }
 
@@ -43,10 +44,8 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
       });
 
       const result = response.data;
-      console.log('Dossier generation result:', result);
-
-      setSuccess({
-        message: 'Dossier generated successfully!',
+      console.log('Dossier generation result:', result);      setSuccess({
+        message: t('generator.success'),
         docxUrl: result.docx?.download_url,
         pdfUrl: result.pdf?.download_url,
         caseId: result.case_id
@@ -71,9 +70,8 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
       setGenerating(false);
     }
   };
-
   const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
+    if (!dateString) return t('common.unknown');
     return new Date(dateString).toLocaleString();
   };
 
@@ -87,30 +85,26 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
 
   return (
     <div className="dossier-generator-overlay">
-      <div className="dossier-generator">
-        <div className="dossier-header">
-          <h2>📋 Generate Evidence Dossier</h2>
+      <div className="dossier-generator">        <div className="dossier-header">
+          <h2>📋 {t('generator.title')}</h2>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
 
-        <div className="dossier-content">
-          <div className="case-info-section">
-            <label htmlFor="case-id">Case ID (Optional):</label>
+        <div className="dossier-content">          <div className="case-info-section">
+            <label htmlFor="case-id">{t('generator.caseId')}</label>
             <input
               id="case-id"
               type="text"
-              placeholder="Enter case identifier (e.g., CASE-2025-001)"
+              placeholder={t('generator.caseIdPlaceholder')}
               value={caseId}
               onChange={(e) => setCaseId(e.target.value)}
               disabled={generating}
             />
-          </div>
-
-          <div className="selected-evidence-section">
-            <h3>Selected Evidence ({selectedEvidence.length} items)</h3>
+          </div>          <div className="selected-evidence-section">
+            <h3>{t('generator.selectedEvidence', { count: selectedEvidence.length })}</h3>
             
             {selectedItems.length === 0 ? (
-              <p className="no-evidence">No evidence items selected</p>
+              <p className="no-evidence">{t('generator.noEvidence')}</p>
             ) : (
               <div className="evidence-list">
                 {selectedItems.map((feature, index) => (
@@ -119,9 +113,8 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
                       {getFileTypeIcon(feature.properties.mime_type)}
                     </div>
                     <div className="evidence-info">
-                      <div className="evidence-name">{feature.properties.filename}</div>
-                      <div className="evidence-details">
-                        <span>Captured: {formatDate(feature.properties.captured_at)}</span>
+                      <div className="evidence-name">{feature.properties.filename}</div>                      <div className="evidence-details">
+                        <span>{t('evidence.captured')}: {formatDate(feature.properties.captured_at)}</span>
                         <span>SHA256: {feature.properties.sha256?.substring(0, 16)}...</span>
                       </div>
                     </div>
@@ -142,31 +135,28 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
             <div className="success-message">
               <span className="success-icon">✅</span>
               <div className="success-content">
-                <p>{success.message}</p>
-                <p><strong>Case ID:</strong> {success.caseId}</p>
+                <p>{success.message}</p>                <p><strong>{t('generator.caseIdLabel')}</strong> {success.caseId}</p>
                 <div className="download-links">
                   {success.docxUrl && (
                     <a href={success.docxUrl} target="_blank" rel="noopener noreferrer" className="download-link">
-                      📄 Download DOCX
+                      {t('generator.downloadDocx')}
                     </a>
                   )}
                   {success.pdfUrl && (
                     <a href={success.pdfUrl} target="_blank" rel="noopener noreferrer" className="download-link">
-                      📑 Download PDF
+                      {t('generator.downloadPdf')}
                     </a>
                   )}
                 </div>
               </div>
             </div>
-          )}
-
-          <div className="action-buttons">
+          )}          <div className="action-buttons">
             <button 
               className="cancel-button"
               onClick={onClose}
               disabled={generating}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button 
               className="generate-button"
@@ -176,11 +166,11 @@ const DossierGenerator = ({ selectedEvidence, onClose, evidenceData }) => {
               {generating ? (
                 <>
                   <span className="spinner">⏳</span>
-                  Generating...
+                  {t('generator.generating')}
                 </>
               ) : (
                 <>
-                  📋 Generate Dossier
+                  📋 {t('generator.generate')}
                 </>
               )}
             </button>

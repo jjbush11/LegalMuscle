@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import DossierGenerator from './DossierGenerator';
 import './DossierManager.css';
 
 const DossierManager = ({ onBack }) => {
+  const { t } = useTranslation();
   const [evidenceData, setEvidenceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -22,7 +24,7 @@ const DossierManager = ({ onBack }) => {
         setError(null);
       } catch (err) {
         console.error('Failed to fetch evidence data:', err);
-        setError('Failed to load evidence data. Please try again.');
+        setError(t('dossier.error'));
       } finally {
         setLoading(false);
       }
@@ -56,16 +58,14 @@ const DossierManager = ({ onBack }) => {
   const closeDossierGenerator = () => {
     setShowDossierGenerator(false);
   };
-
   const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
+    if (!dateString) return t('common.unknown');
     return new Date(dateString).toLocaleString();
   };
-
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown';
+    if (!bytes) return t('common.unknown');
     const mb = bytes / (1024 * 1024);
-    return mb > 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+    return mb > 1 ? t('format.mb', { size: mb.toFixed(1) }) : t('format.kb', { size: (bytes / 1024).toFixed(1) });
   };
 
   const getFileTypeIcon = (mimeType) => {
@@ -75,13 +75,12 @@ const DossierManager = ({ onBack }) => {
     if (mimeType.startsWith('audio/')) return '🎵';
     return '📄';
   };
-
   const getLocationString = (feature) => {
     if (feature.geometry && feature.geometry.coordinates) {
       const [lng, lat] = feature.geometry.coordinates;
       return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     }
-    return 'No location';
+    return t('map.noData');
   };
 
   // Filter and sort evidence
@@ -113,31 +112,29 @@ const DossierManager = ({ onBack }) => {
 
   if (loading) {
     return (
-      <div className="dossier-manager-container">
-        <div className="dossier-header">
+      <div className="dossier-manager-container">        <div className="dossier-header">
           <button className="back-button" onClick={onBack}>
-            ← Back
+            ← {t('nav.back')}
           </button>
           <div className="header-content">
-            <h2>📋 Dossier Generator</h2>
-            <p>Loading evidence data...</p>
+            <h2>📋 {t('dossier.title')}</h2>
+            <p>{t('dossier.loading')}</p>
           </div>
         </div>
-        <div className="loading">Loading...</div>
+        <div className="loading">{t('common.loading')}</div>
       </div>
     );
   }
 
   if (error) {
-    return (
-      <div className="dossier-manager-container">
+    return (      <div className="dossier-manager-container">
         <div className="dossier-header">
           <button className="back-button" onClick={onBack}>
-            ← Back
+            ← {t('nav.back')}
           </button>
           <div className="header-content">
-            <h2>📋 Dossier Generator</h2>
-            <p>Error loading data</p>
+            <h2>📋 {t('dossier.title')}</h2>
+            <p>{t('dossier.error')}</p>
           </div>
         </div>
         <div className="error">{error}</div>
@@ -145,29 +142,26 @@ const DossierManager = ({ onBack }) => {
     );
   }
 
-  return (
-    <div className="dossier-manager-container">
+  return (    <div className="dossier-manager-container">
       <div className="dossier-header">
         <button className="back-button" onClick={onBack}>
-          ← Back
+          ← {t('nav.back')}
         </button>
         <div className="header-content">
-          <h2>📋 Generate Evidence Dossier</h2>
-          <p>Select evidence items to include in your courtroom dossier</p>
+          <h2>📋 {t('dossier.title')}</h2>
+          <p>{t('dossier.subtitle')}</p>
         </div>
         <div className="header-stats">
-          <span className="total-count">{sortedEvidence.length} items</span>
+          <span className="total-count">{t('dossier.itemsCount', { count: sortedEvidence.length })}</span>
           {selectedEvidenceIds.length > 0 && (
-            <span className="selected-count">{selectedEvidenceIds.length} selected</span>
+            <span className="selected-count">{t('dossier.selectedCount', { count: selectedEvidenceIds.length })}</span>
           )}
         </div>
-      </div>
-
-      <div className="dossier-controls">
+      </div>      <div className="dossier-controls">
         <div className="search-section">
           <input
             type="text"
-            placeholder="Search by filename, SHA256, or date..."
+            placeholder={t('dossier.search')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
@@ -180,10 +174,10 @@ const DossierManager = ({ onBack }) => {
             onChange={(e) => setSortBy(e.target.value)}
             className="sort-select"
           >
-            <option value="created_at">Sort by Upload Date</option>
-            <option value="captured_at">Sort by Capture Date</option>
-            <option value="filename">Sort by Filename</option>
-            <option value="sha256">Sort by SHA256</option>
+            <option value="created_at">{t('dossier.sortUploadDate')}</option>
+            <option value="captured_at">{t('dossier.sortCaptureDate')}</option>
+            <option value="filename">{t('dossier.sortFilename')}</option>
+            <option value="sha256">{t('dossier.sortSha256')}</option>
           </select>
           <button 
             className="sort-order-btn"
@@ -191,30 +185,26 @@ const DossierManager = ({ onBack }) => {
           >
             {sortOrder === 'asc' ? '↑' : '↓'}
           </button>
-        </div>
-
-        <div className="selection-actions">
+        </div>        <div className="selection-actions">
           <button 
             className="select-all-btn"
             onClick={selectedEvidenceIds.length === sortedEvidence.length ? clearAllSelection : selectAllEvidence}
           >
-            {selectedEvidenceIds.length === sortedEvidence.length ? 'Clear All' : 'Select All'}
+            {selectedEvidenceIds.length === sortedEvidence.length ? t('dossier.clearAll') : t('dossier.selectAll')}
           </button>
           {selectedEvidenceIds.length > 0 && (
             <button 
               className="generate-dossier-btn"
               onClick={openDossierGenerator}
             >
-              📋 Generate Dossier ({selectedEvidenceIds.length})
+              📋 {t('map.generateDossier')} ({selectedEvidenceIds.length})
             </button>
           )}
         </div>
-      </div>
-
-      <div className="evidence-list-container">
+      </div>      <div className="evidence-list-container">
         {sortedEvidence.length === 0 ? (
           <div className="no-evidence">
-            {searchTerm ? 'No evidence matches your search.' : 'No evidence found.'}
+            {searchTerm ? t('dossier.noEvidence') : t('dossier.noEvidence')}
           </div>
         ) : (
           <div className="evidence-grid">
@@ -244,26 +234,25 @@ const DossierManager = ({ onBack }) => {
                   
                   <div className="evidence-card-content">
                     <div className="evidence-filename">{props.filename}</div>
-                    
-                    <div className="evidence-details">
+                      <div className="evidence-details">
                       <div className="detail-row">
-                        <span className="label">Captured:</span>
+                        <span className="label">{t('evidence.captured')}:</span>
                         <span className="value">{formatDate(props.captured_at)}</span>
                       </div>
                       
                       <div className="detail-row">
-                        <span className="label">Location:</span>
+                        <span className="label">{t('evidence.location')}:</span>
                         <span className="value">{getLocationString(feature)}</span>
                       </div>
                       
                       <div className="detail-row">
-                        <span className="label">SHA256:</span>
+                        <span className="label">{t('evidence.sha256')}:</span>
                         <span className="value hash">{props.sha256?.substring(0, 16)}...</span>
                       </div>
                       
                       {props.file_size && (
                         <div className="detail-row">
-                          <span className="label">Size:</span>
+                          <span className="label">{t('evidence.size')}:</span>
                           <span className="value">{formatFileSize(props.file_size)}</span>
                         </div>
                       )}
